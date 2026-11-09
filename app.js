@@ -9,7 +9,7 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":
 const ko = (a, b) => a.localeCompare(b, "ko-KR");
 let V = null, TAB = "home", ADMIN = null, CAM = null, lastLoad = 0;
 
-const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "청소부": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
+const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "추적자": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
 const DESC = {
   police: "1명이 마피아인지 조사합니다. 결과는 내일 07:30에 옵니다.",
   seer: "2명을 골라 둘 중에 마피아가 있는지 봅니다. 보스도 걸립니다.",
@@ -21,7 +21,7 @@ const DESC = {
   reporter: "1명의 직업을 내일 아침 전체에 공개합니다.",
   medium: "마피아 킬로 죽은 사람 1명을 되살립니다. 교주와 실종자는 안 됩니다.",
   assassin: "오늘 팀이 이 사람을 찍으면 모든 보호를 무시하고 죽입니다.",
-  cleaner: "오늘 팀이 이 사람을 죽이면 실종 처리합니다.",
+  tracker: "1명을 골라, 그 사람이 오늘 능력이나 킬 사진을 쓴 대상을 알아냅니다.",
   doctor: "내일 이 사람을 마피아 킬에서 1번 지킵니다. 같은 사람 연속 불가.",
   guard: "내일 이 사람이 공격받으면 내가 대신 죽습니다.",
   madam: "내일 이 사람의 능력을 봉인합니다. 같은 사람 연속 불가.",
@@ -34,6 +34,7 @@ const DESC = {
   letter: "1명에게 익명 메시지를 보냅니다 (하루 1번, 100자).",
   heir: "교주가 처음 죽을 때 교주를 이을 사람입니다.",
   hunter: "내가 죽을 때 함께 데려갈 사람입니다. 언제든 바꿀 수 있습니다.",
+  deadchat: "카카오톡 오픈채팅으로 사망자방을 만들고 링크를 넣으세요. 이미 죽은 사람과 앞으로 죽는 사람에게 앱이 자동으로 링크를 보냅니다.",
   mayor: "정체를 공개하면 모두에게 시장 표시가 뜨고, 그때부터 투표권이 2표가 됩니다. 대신 의사 보호를 못 받습니다.",
 };
 const CAUSE = { mafia: "마피아 킬", vote: "투표 처형", inquisitor: "이단 심판", contract: "청부", witness: "목격자 연쇄", hunter: "사냥꾼", admin: "운영자 판정" };
@@ -143,7 +144,7 @@ function homeHTML() {
   if (me.mayor) sub.push("시장 공개함 · 2표");
   h += `<div class="rolecard ${cls}"><div class="lbl">내 직업</div><div class="job">${esc(me.job)}</div><div class="lbl">${esc(sub.join(" · "))}</div></div>`;
   if (me.job === "자유신도") h += `<p class="note c small">원래 직업은 ${esc(me.origJob)}였습니다. 다른 사람에게는 원래 직업으로 보입니다.</p>`;
-  if (!me.alive) h += `<div class="card accent n"><h3>${me.missing ? "실종되었습니다" : "사망했습니다"}</h3><p class="small muted">${me.deathDay ? `${me.deathDay}일차 · ${CAUSE[me.deathCause] || ""}` : ""}${me.missing ? " · 사망자방에 들어갈 수 없고 부활할 수 없습니다." : " · 전체방에서는 말할 수 없습니다. 내 세력이 이기면 함께 승리합니다."}</p>${V.deadChatLink ? `<a class="btn ghost" href="${esc(V.deadChatLink)}">사망자방 열기</a>` : ""}</div>`;
+  if (!me.alive) h += `<div class="card accent n"><h3>${me.missing ? "실종되었습니다" : "사망했습니다"}</h3><p class="small muted">${me.deathDay ? `${me.deathDay}일차 · ${CAUSE[me.deathCause] || ""}` : ""}${me.missing ? " · 사망자방에 들어갈 수 없고 부활할 수 없습니다." : " · 전체방에서는 말할 수 없습니다. 내 세력이 이기면 함께 승리합니다."}</p>${!me.missing ? (V.deadChatLink ? `<a class="btn ghost" href="${esc(V.deadChatLink)}">사망자방 들어가기</a>${V.deadChatCode ? `<p class="small">참여코드 <b class="mono">${esc(V.deadChatCode)}</b></p>` : ""}` : `<p class="small muted">수사관이 아직 사망자방을 열지 않았습니다. 열리면 알림으로 링크가 옵니다.</p>`) : ""}</div>`;
   if (me.pending) h += `<div class="card accent c"><div class="between"><h3>🕯️ 교단에 포섭되었습니다</h3><span class="count small" data-deadline="${me.pending.deadline}"></span></div>
     <button class="opt c" type="button" data-choice="자유"><b>자유신도</b><span class="small">교단 팀이 됩니다. 교단 명단을 받고 교단과 함께 이기지만, 능력을 잃습니다.</span></button>
     <button class="opt t" type="button" data-choice="일반"><b>일반 신도</b><span class="small">시민 팀으로 남고 능력도 지킵니다. 대신 교단 머릿수에 들어갑니다.</span></button>
@@ -156,7 +157,7 @@ function homeHTML() {
   if (bl.length && me.alive) h += `<div class="card accent m">${bl.map((x) => `<p class="small">${x}</p>`).join("")}</div>`;
   if (info.day && me.alive) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div>
     <div class="between"><span class="small muted">내 투표권</span><b>${me.voteWeight}표</b></div>
-    ${V.mission ? `<p class="small"><b>오늘의 미션</b> ${esc(V.mission)} <span class="muted">· 카메라 탭에서 인증하면 +1표</span></p>` : ""}</div>`;
+    ${V.mission && me.job === "동료" ? `<p class="small"><b>오늘의 조 미션</b> ${esc(V.mission)} <span class="muted">· ${V.groupMissionDone ? "우리 조 인증 완료 (+1표)" : "조원 중 한 명이 카메라 탭에서 인증하면 조 전원 +1표"}</span></p>` : ""}</div>`;
   if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
   if (info.phase === "night") h += `<p class="note small">00:00~07:30에는 행동할 수 없습니다. 어젯밤 결과는 07:30에 발표됩니다.</p>`;
   h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${(V.events || []).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
@@ -176,6 +177,7 @@ function abilityForm(a) {
   else if (k === "heir") inner = `<div class="field"><label>후계자</label>${sel(`f_${k}`, V.people.filter((x) => ["광신도", "자유신도"].includes(x.label) && x.alive), me.heir)}</div>`;
   else if (k === "hunter") inner = `<div class="field"><label>데려갈 사람</label>${sel(`f_${k}`, others, me.hunterTarget)}</div>`;
   else if (k === "letter") inner = `<div class="field"><label>받는 사람</label>${sel(`f_${k}`, others)}</div><div class="field"><label>내용 (100자)</label><textarea id="f_letter_body" maxlength="100"></textarea></div>`;
+  else if (k === "deadchat") inner = `<div class="field"><label>오픈채팅 링크</label><input type="text" id="f_dc_link" inputmode="url" placeholder="https://open.kakao.com/o/..." value="${esc(V.deadChatLink || "")}"></div><div class="field"><label>참여코드 (설정했다면)</label><input type="text" id="f_dc_code" maxlength="20" value="${esc(V.deadChatCode || "")}"></div>`;
   else if (k === "mayor" || k === "hide") inner = "";
   else {
     const self = ["doctor", "priest", "framer", "lawyer"].includes(k);
@@ -184,10 +186,10 @@ function abilityForm(a) {
     if (k === "convert") list = list.filter((x) => !V.people.some((p) => p.sid === x.sid && ["광신도", "자유신도", "교주"].includes(p.label)));
     inner = `<div class="field"><label>대상</label>${sel(`f_${k}`, list, cur)}</div>`;
   }
-  const done = k === "heir" ? (me.heir ? `현재: ${nameOf(me.heir)}` : "") : k === "hunter" ? (me.hunterTarget ? `현재: ${nameOf(me.hunterTarget)}` : "") :
+  const done = k === "deadchat" ? (V.deadChatLink ? "저장됨 · 사망자에게 전송 중" : "") : k === "heir" ? (me.heir ? `현재: ${nameOf(me.heir)}` : "") : k === "hunter" ? (me.hunterTarget ? `현재: ${nameOf(me.hunterTarget)}` : "") :
     today ? `제출함: ${k === "seer" ? nameOf(today.a) + ", " + nameOf(today.b) : k === "contract" ? "청부 3명" : k === "hide" ? "내일 숨기" : nameOf(today.target)} (23:59까지 바꿀 수 있음)` : "";
   const left = a.left != null ? `남은 횟수 ${a.left}` : a.when === "tomorrow" ? "내일 적용" : a.when === "setting" ? "설정" : "오늘";
-  const btn = k === "mayor" ? (me.mayor ? "" : `<button class="btn full" type="button" data-sub="${k}">시장임을 공개하기</button>`) : k === "hide" ? `<button class="btn full" type="button" data-sub="${k}">내일 숨기</button>` : `<button class="btn full" type="button" data-sub="${k}">${k === "letter" ? "보내기" : k === "heir" || k === "hunter" ? "저장" : "제출"}</button>`;
+  const btn = k === "mayor" ? (me.mayor ? "" : `<button class="btn full" type="button" data-sub="${k}">시장임을 공개하기</button>`) : k === "hide" ? `<button class="btn full" type="button" data-sub="${k}">내일 숨기</button>` : `<button class="btn full" type="button" data-sub="${k}">${k === "letter" ? "보내기" : k === "heir" || k === "hunter" || k === "deadchat" ? "저장" : "제출"}</button>`;
   return `<div class="card"><div class="between"><h3>${esc(a.label)}</h3><span class="small muted mono">${left}</span></div><p class="small muted">${esc(DESC[k] || "")}</p>${inner}${done ? `<p class="ok">${esc(done)}</p>` : ""}${btn}</div>`;
 }
 function actHTML() {
@@ -195,8 +197,7 @@ function actHTML() {
   if (V.status !== "running") return `<div class="card"><p class="muted">게임이 진행 중이 아닙니다.</p></div>`;
   if (info.phase !== "open") return `<div class="card"><p class="muted">${info.phase === "night" ? "07:30부터 행동할 수 있습니다." : "아직 게임이 시작되지 않았습니다."}</p></div>`;
   if (!me.alive) {
-    const canDispute = me.deathCause === "mafia" && me.deathDay === info.day - 1;
-    return canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었다면 운영자에게 이의를 낼 수 있습니다. 운영자가 사진을 보고 판정합니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
+    return V.canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었다면 이의를 낼 수 있습니다. 수사관이 사진을 보고 판정합니다. 한 번만 낼 수 있습니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
   }
   let h = "";
   const vt = (V.today || {}).vote;
@@ -209,7 +210,8 @@ function actHTML() {
     h += `<div class="card accent m"><div class="between"><h3>오늘 마피아 킬</h3><span class="small muted mono">${V.teamKillsToday || 0}번 시도</span></div><p class="small muted">킬은 카메라 탭에서 찍습니다. 기본 2번이고, 접선 시도는 2번까지 횟수에서 빠집니다.</p>
       ${(V.teamKills || []).map((k) => `<p class="small">${shortTime(k.at)} · ${esc(k.by)} → ${esc(k.target)}</p>`).join("")}</div>`;
   }
-  const abil = (V.abilities || []).filter((a) => a.kind !== "mayor" || !me.mayor);
+  const abil = (V.abilities || []).filter((a) => (a.kind !== "mayor" || !me.mayor) && a.kind !== "inspect");
+  if (me.job === "수사관") h += `<div class="card accent t"><h3>킬 사진 판정</h3><p class="small muted">사진 탭에서 가장 최근 밤의 킬 사진을 보고, 자는 중이었거나 얼굴을 알아볼 수 없으면 무효로 판정합니다. 하루 1번이고, 판정하면 바로 전체에 공개됩니다.</p></div>`;
   if (!abil.length && !V.canKill) h += `<div class="card"><p class="small muted">${me.job === "동료" ? "동료는 특수 능력이 없습니다. 같은 조와 정보를 나누고, 미션으로 표를 늘리세요." : "쓸 수 있는 능력이 없습니다."}</p></div>`;
   abil.forEach((a) => (h += abilityForm(a)));
   return h;
@@ -221,6 +223,7 @@ function payloadFor(k) {
   if (k === "contract") return { picks: [0, 1, 2].map((i) => ({ target: v(`f_ct_t${i}`), job: v(`f_ct_j${i}`) })) };
   if (k === "letter") return { target: v("f_letter"), body: v("f_letter_body") };
   if (k === "dispute") return { note: v("f_dispute") };
+  if (k === "deadchat") return { link: v("f_dc_link"), code: v("f_dc_code") };
   if (k === "mayor" || k === "hide") return {};
   return { target: v(`f_${k}`) };
 }
@@ -251,14 +254,14 @@ function camHTML() {
   const purposes = [];
   if (V.canKill && info.weekday) purposes.push(["kill", "킬 촬영"]);
   if (info.weekday) purposes.push(["counter", "반격 (나를 찍은 사람)"]);
-  if (!(V.myPhotos || []).some((p) => p.kind === "mission")) purposes.push(["mission", "미션 인증"]);
+  if (me.job === "동료" && !V.groupMissionDone) purposes.push(["mission", "조 미션 인증"]);
   if (!purposes.length) return `<div class="card"><p class="muted">오늘은 촬영할 일이 없습니다.</p></div>`;
   const known = new Set(V.people.map((p) => p.sid));
   const pur = (CAM && CAM.purpose) || purposes[0][0];
   const targets = pur === "kill" ? aliveOthers().filter((x) => !(known.has(x.sid) && V.people.find((p) => p.sid === x.sid).label !== "연인")) : aliveOthers();
   let h = `<div class="card"><div class="field"><label>무엇을 찍나요</label><select id="c_purpose">${purposes.map(([k, l]) => `<option value="${k}"${k === pur ? " selected" : ""}>${l}</option>`).join("")}</select></div>`;
   if (pur !== "mission") h += `<div class="field"><label>${pur === "kill" ? "대상" : "나를 찍은 사람"}</label><select id="c_target"><option value="">고르세요</option>${opt(targets, CAM && CAM.target)}</select></div>`;
-  h += `<p class="small muted">${pur === "kill" ? "자고 있는 사람은 찍을 수 없습니다. 얼굴이 알아볼 수 있게 나와야 합니다." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 미션: " + esc(V.mission) : ""}</p>`;
+  h += `<p class="small muted">${pur === "kill" ? "자고 있는 사람은 찍을 수 없습니다. 얼굴이 알아볼 수 있게 나와야 합니다." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 조 미션: " + esc(V.mission) + " · 조원 중 한 명만 올리면 됩니다." : ""}</p>`;
   if (!CAM || !CAM.session) h += `<button class="btn full" type="button" id="c_start">카메라 열기</button><p class="small muted">카메라를 연 뒤 60초 안에 찍고 보내야 합니다. 갤러리 사진은 쓸 수 없습니다.</p>`;
   else if (!CAM.shot) h += `<div class="camwrap"><video id="c_video" playsinline autoplay muted></video><div class="stamp" id="c_stamp"></div></div><div class="row"><button class="btn" style="flex:1" type="button" id="c_shoot">촬영</button><button class="btn ghost" type="button" id="c_flip">전환</button><span class="count" id="c_count"></span></div>`;
   else h += `<img class="ph" id="c_prev" alt="촬영한 사진" src="${CAM.shot}"><div class="row"><button class="btn" style="flex:1" type="button" id="c_send">보내기</button><button class="btn ghost" type="button" id="c_retake">다시 찍기</button><span class="count" id="c_count"></span></div>`;
@@ -323,7 +326,16 @@ async function loadPhotos() {
   try {
     const r = await api("photos");
     $("main").innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">누가 찍었는지는 나오지 않습니다. 실종 처리된 킬은 없습니다.</p></div>` +
-      (r.photos.length ? r.photos.map((p) => `<div class="card"><div class="between"><b>${esc(p.target)}</b><span class="small muted">${p.day}일차</span></div><img class="ph" loading="lazy" alt="${esc(p.target)} 킬 사진" src="${esc(p.url)}"></div>`).join("") : `<div class="card"><p class="muted small">아직 사진이 없습니다.</p></div>`);
+      (r.photos.length ? r.photos.map((p) => {
+        const dead = !(V.everyone.find((x) => x.sid === p.sid) || {}).alive;
+        const can = V.me.job === "수사관" && V.me.alive && V.info.phase === "open" && p.day === V.lastKillDay && dead;
+        return `<div class="card"><div class="between"><b>${esc(p.target)}</b><span class="small muted">${p.day}일차${dead ? "" : " · 판정으로 부활"}</span></div><img class="ph" loading="lazy" alt="${esc(p.target)} 킬 사진" src="${esc(p.url)}">${can ? `<button class="btn ghost full" type="button" data-inspect="${esc(p.sid)}">이 킬을 무효로 판정</button>` : ""}</div>`;
+      }).join("") : `<div class="card"><p class="muted small">아직 사진이 없습니다.</p></div>`);
+    document.querySelectorAll("[data-inspect]").forEach((b) => (b.onclick = async () => {
+      const nm = nameOf(b.dataset.inspect);
+      if (!(await confirmBox(`${nm} 님의 킬을 무효로 판정할까요? ${nm} 님이 되살아나고, 전체에 공개됩니다. 하루 1번만 할 수 있습니다.`, "무효 판정"))) return;
+      try { const res = await api("act", { kind: "inspect", payload: { target: b.dataset.inspect } }); V = { ...V, ...res.view }; toast("판정했습니다."); loadPhotos(); } catch (e) { toast(e.message); }
+    }));
   } catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
 }
 
@@ -334,31 +346,28 @@ async function loadAdmin() {
   catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
 }
 function adminHTML() {
-  const S = ADMIN.state;
+  const G = ADMIN.game;
   const startForm = `<div class="card"><h3>게임 만들기</h3>
+    <p class="small muted">직업은 무작위로 배정되고, 관리자도 볼 수 없습니다.</p>
     <div class="field"><label>시작일 (월요일)</label><input type="date" id="a_start" value="${nextMonday()}"></div>
-    <div class="field"><label>사망자방 링크 (선택)</label><input type="text" id="a_dead" placeholder="https://open.kakao.com/..."></div>
-    <div class="field"><label>직업 구성 (합이 참가자 수와 같아야 함)</label><textarea id="a_comp" style="min-height:140px;font-family:var(--font-mono);font-size:.8rem">${esc(JSON.stringify(DEFAULT_COMPOSITION, null, 1))}</textarea></div>
-    <button class="btn full" type="button" id="a_go">${S ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기 (직업 무작위 배정)"}</button></div>`;
-  if (!S) return startForm;
-  const P = Object.values(S.players).sort((a, b) => ko(a.name, b.name));
-  const name = (sid) => (S.players[sid] ? S.players[sid].name : sid || "");
-  const info = ADMIN.info;
-  let h = `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${S.status === "running" ? "t" : "n"}">${S.status}</span></div>
-    <p class="small">${info.day}일차 · ${info.phase} · 처리 완료 ${S.resolvedThrough}일차 · 게임 시각 ${kst(ADMIN.now)}</p>
-    <p class="small muted">생존 ${P.filter((p) => p.alive).length}명 · 마피아 ${P.filter((p) => p.alive && p.team === "mafia").length} · 교단 팀 ${P.filter((p) => p.alive && p.team === "cult").length} · 일반 신도 ${P.filter((p) => p.alive && p.disciple === "일반").length}${S.winner ? " · 승자 " + S.winner : ""}</p>
-    <div class="row"><button class="btn ghost" type="button" id="a_pause">${S.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div></div>`;
-  h += `<div class="card"><h3>설정</h3><div class="field"><label>사망자방 링크</label><input type="text" id="a_dead2" value="${esc(S.config.deadChatLink || "")}"></div>
-    <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${S.config.clockOffsetMin || 0}"></div>
+    <details><summary class="small">직업 구성 바꾸기 (합이 참가자 수와 같아야 함)</summary><textarea id="a_comp" style="min-height:140px;font-family:var(--font-mono);font-size:.8rem">${esc(JSON.stringify(DEFAULT_COMPOSITION, null, 1))}</textarea></details>
+    <button class="btn full" type="button" id="a_go">${G ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기"}</button></div>`;
+  if (!G) return startForm;
+  const info = ADMIN.info, P = ADMIN.players || [];
+  let h = `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span></div>
+    <p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 전" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
+    <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
+    <div class="row"><button class="btn ghost" type="button" id="a_pause">${G.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div></div>`;
+  const ms = ADMIN.missions || [];
+  h += `<div class="card"><h3>미션 인증 확인</h3><p class="small muted">누가 올렸는지는 보이지 않습니다. 미션과 맞지 않는 사진만 반려하세요. 반려하면 그 조의 +1표가 취소됩니다.</p>
+    ${ms.length ? ms.map((m) => `<div class="card"><div class="between"><span class="small">${m.day}일차 · ${esc(m.mission)}${m.rejected ? " · <b>반려됨</b>" : ""}</span>${m.rejected ? "" : `<button class="btn ghost small" type="button" data-reject="${m.id}">반려</button>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("") : `<p class="small muted">최근 이틀 동안 올라온 미션 사진이 없습니다.</p>`}</div>`;
+  h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
+  h += `<div class="card"><h3>설정</h3>
+    <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${G.clockOffsetMin || 0}"></div>
     <div class="row"><button class="btn ghost" type="button" data-off="60">+1시간</button><button class="btn ghost" type="button" data-off="1440">+1일</button><button class="btn ghost" type="button" data-off="reset">0으로</button></div>
     <button class="btn full" type="button" id="a_save">설정 저장</button></div>`;
-  h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
-  const disputes = (ADMIN.actions || []).filter((a) => a.kind === "dispute");
-  if (disputes.length) h += `<div class="card accent m"><h3>이의 제기</h3>${disputes.map((d) => `<div class="person"><span class="small">${d.day}일차 · <b>${esc(name(d.actor))}</b>: ${esc(d.payload.note || "")}</span><button class="btn ghost small" type="button" data-revive="${d.actor}">되살리기</button></div>`).join("")}<p class="small muted">아래 사진 목록에서 해당 킬 사진을 확인하고 판정하세요.</p></div>`;
-  h += `<div class="card"><h3>참가자 (운영자만 보는 정보)</h3><div class="tw"><table><tr><th>이름</th><th>직업</th><th>팀</th><th>상태</th><th></th></tr>${P.map((p) => `<tr><td>${esc(p.name)}<br><span class="muted mono">${p.sid}</span></td><td>${esc(p.job)}${p.job !== p.origJob ? `<br><span class="muted">원래 ${esc(p.origJob)}</span>` : ""}${p.group ? `<br><span class="muted">${p.group}조</span>` : ""}</td><td>${p.team}${p.disciple ? `<br>${p.disciple} 신도` : ""}${p.pending ? "<br>선택 대기" : ""}${p.team === "mafia" ? `<br>${p.connected ? "접선" : "대기"}` : ""}</td><td>${p.alive ? "생존" : `사망 ${p.deathDay}일 ${CAUSE[p.deathCause] || ""}${p.missing ? " 실종" : ""}`}</td><td>${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</td></tr>`).join("")}</table></div></div>`;
-  h += `<div class="card"><h3>최근 행동</h3><div class="tw"><table><tr><th>시각</th><th>누가</th><th>무엇</th><th>대상</th></tr>${(ADMIN.actions || []).slice(0, 120).map((a) => `<tr><td class="mono">${shortTime(a.at)}</td><td>${esc(name(a.actor))}</td><td>${esc(a.kind)}</td><td>${esc(a.payload.target ? name(a.payload.target) : a.payload.a ? name(a.payload.a) + ", " + name(a.payload.b) : a.payload.picks ? a.payload.picks.map((x) => name(x.target) + "=" + x.job).join(", ") : a.payload.choice || "")}</td></tr>`).join("")}</table></div></div>`;
-  h += `<div class="card"><h3>사진</h3>${(ADMIN.photos || []).slice(0, 60).map((p) => `<div class="card"><div class="between"><span class="small">${p.day}일차 · ${p.kind} · ${esc(p.by)}${p.target ? " → " + esc(p.target) : ""}${p.success ? " · 성공" : ""}${p.rejected ? " · 반려됨" : ""}</span>${p.kind === "mission" && !p.rejected ? `<button class="btn ghost small" type="button" data-reject="${p.id}">반려</button>` : ""}</div><img class="ph" loading="lazy" alt="" src="${esc(p.url)}"></div>`).join("") || `<p class="small muted">없음</p>`}</div>`;
-  h += `<div class="card"><h3>알림 기록</h3><div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)} · ${e.audience.includes("*") ? "전체" : e.audience.map(name).join(", ")}</div>${esc(e.text)}</div>`).join("")}</div></div>`;
+  h += `<div class="card"><h3>참가자 (공개 정보만)</h3><p class="small muted">사고가 났을 때만 쓰세요. 부활·제외는 전체에 공지됩니다.</p>${P.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="chips">${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</span></div>`).join("")}</div>`;
+  h += `<div class="card"><h3>공개 알림 기록</h3><div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)}</div>${esc(e.text)}</div>`).join("")}</div></div>`;
   h += startForm;
   h += `<div class="card accent m"><h3>초기화</h3><p class="small muted">게임 상태와 모든 기록을 지웁니다. 확인란에 "초기화"를 적으세요.</p><input type="text" id="a_rst"><button class="btn danger full" type="button" id="a_rstb">초기화</button></div>`;
   return h;
@@ -368,17 +377,18 @@ function bindAdmin() {
   const run = async (op, data, msg) => { try { await api(op, data); toast(msg || "완료"); await refresh(); } catch (e) { toast(e.message); } };
   on("a_go", async () => {
     let comp; try { comp = JSON.parse($("a_comp").value); } catch { return toast("직업 구성 JSON이 올바르지 않습니다."); }
-    if (!(await confirmBox(`${$("a_start").value}에 시작하는 게임을 만들고 직업을 무작위로 배정할까요?${ADMIN.state ? " 기존 기록은 모두 지워집니다." : ""}`, "만들기"))) return;
-    run("admin_start", { startDate: $("a_start").value, composition: comp, deadChatLink: $("a_dead").value, force: true }, "게임을 만들었습니다.");
+    if (!(await confirmBox(`${$("a_start").value}에 시작하는 게임을 만들고 직업을 무작위로 배정할까요?${ADMIN.game ? " 기존 기록은 모두 지워집니다." : ""}`, "만들기"))) return;
+    run("admin_start", { startDate: $("a_start").value, composition: comp, force: true }, "게임을 만들었습니다.");
   });
   on("a_reload", () => loadAdmin());
-  on("a_pause", () => run("admin_set", { status: ADMIN.state.status === "paused" ? "running" : "paused" }));
-  on("a_save", () => run("admin_set", { deadChatLink: $("a_dead2").value, clockOffsetMin: Number($("a_off").value) || 0 }, "저장했습니다."));
+  on("a_pause", () => run("admin_set", { status: ADMIN.game.status === "paused" ? "running" : "paused" }));
+  on("a_save", () => run("admin_set", { clockOffsetMin: Number($("a_off").value) || 0 }, "저장했습니다."));
   document.querySelectorAll("[data-off]").forEach((b) => (b.onclick = () => { const o = $("a_off"); o.value = b.dataset.off === "reset" ? 0 : (Number(o.value) || 0) + Number(b.dataset.off); }));
   on("a_annb", () => run("admin_announce", { text: $("a_ann").value }, "공지를 보냈습니다."));
   on("a_rstb", async () => { if (await confirmBox("정말 초기화할까요?", "초기화")) run("admin_reset", { confirm: $("a_rst").value }, "초기화했습니다."); });
-  document.querySelectorAll("[data-revive]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${ADMIN.state.players[b.dataset.revive].name} 님을 되살릴까요? 전체에 공지됩니다.`, "되살리기")) run("admin_player", { sid: b.dataset.revive, action: "revive" }); }));
-  document.querySelectorAll("[data-kill]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${ADMIN.state.players[b.dataset.kill].name} 님을 게임에서 제외할까요? 전체에 공지됩니다.`, "제외")) run("admin_player", { sid: b.dataset.kill, action: "kill" }); }));
+  const pn = (sid) => (ADMIN.players.find((p) => p.sid === sid) || {}).name || sid;
+  document.querySelectorAll("[data-revive]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${pn(b.dataset.revive)} 님을 되살릴까요? 전체에 공지됩니다.`, "되살리기")) run("admin_player", { sid: b.dataset.revive, action: "revive" }); }));
+  document.querySelectorAll("[data-kill]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${pn(b.dataset.kill)} 님을 게임에서 제외할까요? 전체에 공지됩니다.`, "제외")) run("admin_player", { sid: b.dataset.kill, action: "kill" }); }));
   document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => run("admin_reject_photo", { id: Number(b.dataset.reject) }, "반려했습니다.")));
 }
 
