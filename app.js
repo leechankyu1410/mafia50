@@ -116,7 +116,8 @@ function render() {
   if (V.admin) tabs.push(["admin", "🛠️", "관리"]);
   if (!tabs.some((t) => t[0] === TAB)) TAB = "home";
   $("tabs").hidden = tabs.length < 2;
-  $("tabsIn").innerHTML = tabs.map(([k, i, l]) => `<button type="button" data-tab="${k}"${k === TAB ? ' aria-current="page"' : ""}><span class="i">${i}</span>${l}</button>`).join("");
+  const todo = V.adminTodo ? V.adminTodo.questions + V.adminTodo.missions : 0;
+  $("tabsIn").innerHTML = tabs.map(([k, i, l]) => `<button type="button" data-tab="${k}"${k === TAB ? ' aria-current="page"' : ""}><span class="i" style="position:relative">${i}${k === "admin" && todo ? `<span class="badge" aria-label="처리할 일 ${todo}개">${todo > 99 ? "99+" : todo}</span>` : ""}</span>${l}</button>`).join("");
   $("tabsIn").querySelectorAll("button").forEach((b) => (b.onclick = () => { if (TAB === "cam") stopCam(); TAB = b.dataset.tab; render(); window.scrollTo(0, 0); }));
   const m = $("main");
   if (TAB === "home") m.innerHTML = homeHTML();
@@ -308,7 +309,7 @@ function camHTML() {
   const targets = pur === "kill" ? aliveOthers().filter((x) => !(known.has(x.sid) && V.people.find((p) => p.sid === x.sid).label !== "연인")) : aliveOthers();
   let h = `<div class="card"><div class="field"><label>무엇을 찍나요</label><select id="c_purpose">${purposes.map(([k, l]) => `<option value="${k}"${k === pur ? " selected" : ""}>${l}</option>`).join("")}</select></div>`;
   if (pur !== "mission") h += `<div class="field"><label>${pur === "kill" ? "대상" : "나를 찍은 사람"}</label><select id="c_target"><option value="">고르세요</option>${opt(targets, CAM && CAM.target)}</select></div>`;
-  h += `<p class="small muted">${pur === "kill" ? "자고 있는 사람은 찍을 수 없습니다. 얼굴이 알아볼 수 있게 나와야 합니다." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 조 미션: " + esc(V.mission) + " · 조원 중 한 명만 올리면 됩니다." : ""}</p>`;
+  h += `<p class="small muted">${pur === "kill" ? "얼굴을 알아볼 수 있게, 깨어 있는 사람만 찍으세요. 화장실·탈의실·샤워실과 옷 갈아입는 사람은 절대 찍지 않습니다(실격)." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 조 미션: " + esc(V.mission) + " · 조원 중 한 명만 올리면 됩니다." : ""}</p>`;
   if (!CAM || !CAM.session) h += `<button class="btn full" type="button" id="c_start">카메라 열기</button><p class="small muted">카메라를 연 뒤 60초 안에 찍고 보내야 합니다. 갤러리 사진은 쓸 수 없습니다.</p>`;
   else if (!CAM.shot) h += `<div class="camwrap"><video id="c_video" playsinline autoplay muted></video><div class="stamp" id="c_stamp"></div></div><div class="row"><button class="btn" style="flex:1" type="button" id="c_shoot">촬영</button><button class="btn ghost" type="button" id="c_flip">전환</button><span class="count" id="c_count"></span></div>`;
   else h += `<img class="ph" id="c_prev" alt="촬영한 사진" src="${CAM.shot}"><div class="row"><button class="btn" style="flex:1" type="button" id="c_send">보내기</button><button class="btn ghost" type="button" id="c_retake">다시 찍기</button><span class="count" id="c_count"></span></div>`;
@@ -369,10 +370,23 @@ setInterval(() => {
 }, 500);
 
 // ------------------------------------------------------------------ 사진 (수사관·사망자)
+const CRITERIA_HTML = `<details><summary class="small"><b>킬 사진 인정 기준</b> (애매하면 유효)</summary>
+  <p class="small"><b>둘 다 만족해야 유효</b>: ① 아는 친구가 보면 바로 누군지 알 수 있다 ② 깨어 있었다</p>
+  <table><tr><th>상황</th><th>판정</th></tr>
+  <tr><td>마스크를 썼지만 눈·머리 모양으로 알아봄</td><td>유효</td></tr>
+  <tr><td>뒷모습, 정수리만 보임</td><td>무효</td></tr>
+  <tr><td>멀리서 확대, 흐릿하지만 누군지 앎</td><td>유효</td></tr>
+  <tr><td>너무 흐려서 누군지 모름</td><td>무효</td></tr>
+  <tr><td>책상에 엎드려 얼굴이 안 보임</td><td>무효</td></tr>
+  <tr><td>의자에 기대 눈 감고 졸고 있음</td><td>무효</td></tr>
+  <tr><td>걷거나 웃다가 눈을 감은 순간</td><td>유효</td></tr>
+  <tr><td>화면·인쇄한 사진을 다시 찍음</td><td>무효</td></tr>
+  <tr><td>거울에 비친 모습</td><td>알아보면 유효</td></tr></table>
+  <p class="small warn">화장실·탈의실·샤워실, 옷 갈아입는 사람을 찍은 사진은 판정하지 말고 운영자에게 알리세요. 찍은 사람은 실격입니다.</p></details>`;
 async function loadPhotos() {
   try {
     const r = await api("photos");
-    $("main").innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">누가 찍었는지는 나오지 않습니다. 실종 처리된 킬은 없습니다.</p></div>` +
+    $("main").innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">누가 찍었는지는 나오지 않습니다.</p>${CRITERIA_HTML}</div>` +
       (r.photos.length ? r.photos.map((p) => {
         const dead = !(V.everyone.find((x) => x.sid === p.sid) || {}).alive;
         const can = V.me.job === "수사관" && V.me.alive && V.info.phase === "open" && p.day === V.lastKillDay && dead;
@@ -404,15 +418,18 @@ function adminHTML() {
     <button class="btn full" type="button" id="a_go">${G ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기"}</button></div>`;
   if (!G) return startForm;
   const info = ADMIN.info, P = ADMIN.players || [];
-  let h = `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span></div>
+  const qn = ((ADMIN.qa && ADMIN.qa.pending) || []).length, mn = (ADMIN.missions || []).filter((m) => !m.reviewed).length;
+  let h = qn + mn ? `<div class="card accent m"><h3>처리할 일 ${qn + mn}개</h3><p class="small">${qn ? `답변 대기 질문 ${qn}개` : ""}${qn && mn ? " · " : ""}${mn ? `확인 대기 미션 ${mn}개` : ""}</p></div>` : `<p class="small muted">처리할 일이 없습니다.</p>`;
+  h += `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span></div>
     <p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 전" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
     <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
     <div class="row"><button class="btn ghost" type="button" id="a_pause">${G.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div></div>`;
-  const ms = ADMIN.missions || [];
-  h += `<div class="card"><h3>미션 인증 확인</h3><p class="small muted">누가 올렸는지는 보이지 않습니다. 미션과 맞지 않는 사진만 반려하세요. 반려하면 그 조의 +1표가 취소됩니다.</p>
-    ${ms.length ? ms.map((m) => `<div class="card"><div class="between"><span class="small">${m.day}일차 · ${esc(m.mission)}${m.rejected ? " · <b>반려됨</b>" : ""}</span>${m.rejected ? "" : `<button class="btn ghost small" type="button" data-reject="${m.id}">반려</button>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("") : `<p class="small muted">최근 이틀 동안 올라온 미션 사진이 없습니다.</p>`}</div>`;
+  const ms = [...(ADMIN.missions || [])].sort((a, b) => (a.reviewed === b.reviewed ? b.id - a.id : a.reviewed ? 1 : -1));
+  const msTodo = ms.filter((m) => !m.reviewed).length;
+  h += `<div class="card${msTodo ? " accent m" : ""}"><div class="between"><h3>미션 인증 확인</h3><span class="small ${msTodo ? "warn" : "muted"}">확인 대기 ${msTodo}</span></div><p class="small muted">누가 올렸는지는 보이지 않습니다. 맞으면 <b>확인</b>, 미션과 맞지 않으면 <b>반려</b>를 누르세요. 반려하면 그 조의 +1표가 취소됩니다.</p>
+    ${ms.length ? ms.map((m) => `<div class="card"><div class="between"><span class="small">${m.day}일차 · ${esc(m.mission)}${m.rejected ? " · <b>반려됨</b>" : m.reviewed ? " · 확인함" : ""}</span>${m.reviewed ? "" : `<span class="row"><button class="btn small" type="button" data-approve="${m.id}">확인</button><button class="btn ghost small" type="button" data-reject="${m.id}">반려</button></span>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("") : `<p class="small muted">최근 이틀 동안 올라온 미션 사진이 없습니다.</p>`}</div>`;
   const qp = (ADMIN.qa && ADMIN.qa.pending) || [];
-  h += `<div class="card"><div class="between"><h3>익명 질문</h3><span class="small muted">답변 대기 ${qp.length}</span></div>
+  h += `<div class="card${qp.length ? " accent m" : ""}"><div class="between"><h3>익명 질문</h3><span class="small ${qp.length ? "warn" : "muted"}">답변 대기 ${qp.length}</span></div>
     <p class="small muted">질문자 이름은 저장되지 않습니다. 답하면 질문과 답이 전체 알림으로 공개됩니다. 게임 정보를 흘리려는 질문이나 장난은 지우세요.</p>
     ${qp.length ? qp.map((q) => `<div class="card"><p class="small muted">${shortTime(q.created_at)}</p><p>${esc(q.text)}</p><textarea id="qa_a_${q.id}" placeholder="답변"></textarea><div class="row"><button class="btn" style="flex:1" type="button" data-qa-answer="${q.id}">답하고 공개</button><button class="btn ghost" type="button" data-qa-del="${q.id}">지우기</button></div></div>`).join("") : `<p class="small muted">대기 중인 질문이 없습니다.</p>`}</div>`;
   h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
@@ -445,13 +462,14 @@ function bindAdmin() {
   document.querySelectorAll("[data-kill]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${pn(b.dataset.kill)} 님을 게임에서 제외할까요? 전체에 공지됩니다.`, "제외")) run("admin_player", { sid: b.dataset.kill, action: "kill" }); }));
   document.querySelectorAll("[data-qa-answer]").forEach((b) => (b.onclick = async () => {
     const a = $("qa_a_" + b.dataset.qaAnswer).value.trim(); if (!a) return toast("답변을 적으세요.");
-    try { await api("admin_qa_answer", { id: Number(b.dataset.qaAnswer), answer: a }); toast("답하고 공개했습니다."); loadAdmin(); } catch (e) { toast(e.message); }
+    try { await api("admin_qa_answer", { id: Number(b.dataset.qaAnswer), answer: a }); toast("답하고 공개했습니다."); await refresh(); } catch (e) { toast(e.message); }
   }));
   document.querySelectorAll("[data-qa-del]").forEach((b) => (b.onclick = async () => {
     if (!(await confirmBox("이 질문을 지울까요? 공개되지 않습니다.", "지우기"))) return;
-    try { await api("admin_qa_delete", { id: Number(b.dataset.qaDel) }); toast("지웠습니다."); loadAdmin(); } catch (e) { toast(e.message); }
+    try { await api("admin_qa_delete", { id: Number(b.dataset.qaDel) }); toast("지웠습니다."); await refresh(); } catch (e) { toast(e.message); }
   }));
-  document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => run("admin_reject_photo", { id: Number(b.dataset.reject) }, "반려했습니다.")));
+  document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = async () => { try { await api("admin_reject_photo", { id: Number(b.dataset.reject) }); toast("반려했습니다."); await refresh(); } catch (e) { toast(e.message); } }));
+  document.querySelectorAll("[data-approve]").forEach((b) => (b.onclick = async () => { try { await api("admin_approve_photo", { id: Number(b.dataset.approve) }); toast("확인했습니다."); await refresh(); } catch (e) { toast(e.message); } }));
 }
 
 // ------------------------------------------------------------------ 이벤트 연결
