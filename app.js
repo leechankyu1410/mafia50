@@ -240,7 +240,7 @@ async function submit(k) {
 function peopleHTML() {
   let h = "";
   if (V.people.length) h += `<div class="card"><h3>내가 아는 사람</h3>${V.people.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="small muted">${esc(p.label)}</span></div>`).join("")}</div>`;
-  else h += `<div class="card"><h3>내가 아는 사람</h3><p class="small muted">${V.me.team === "마피아" && !V.me.connected ? "아직 접선하지 못했습니다. 킬 팀이 나를 지목하거나 6일차가 되면 마피아 명단이 열립니다." : "처음부터 아는 사람이 없습니다."}</p></div>`;
+  else h += `<div class="card"><h3>내가 아는 사람</h3><p class="small muted">${V.me.team === "마피아" && !V.me.connected ? "아직 접선하지 못했습니다. 킬 팀이 나를 지목하거나 평일 5일이 지나면 마피아 명단이 열립니다." : "처음부터 아는 사람이 없습니다."}</p></div>`;
   const alive = V.everyone.filter((x) => x.alive).length;
   h += `<div class="card"><div class="between"><h3>전체 명단</h3><span class="small muted">생존 ${alive} / ${V.everyone.length}</span></div>
     ${V.everyone.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}${p.sid === V.me.sid ? ' <span class="small muted">(나)</span>' : ""}</span><span class="chips">${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? "" : `<span class="pill n">${p.missing ? "실종" : "사망"}</span>`}</span></div>`).join("")}</div>`;
@@ -349,7 +349,7 @@ function adminHTML() {
   const G = ADMIN.game;
   const startForm = `<div class="card"><h3>게임 만들기</h3>
     <p class="small muted">직업은 무작위로 배정되고, 관리자도 볼 수 없습니다.</p>
-    <div class="field"><label>시작일 (월요일)</label><input type="date" id="a_start" value="${nextMonday()}"></div>
+    <div class="field"><label>시작일 (어느 요일이든 가능, 평일 추천)</label><input type="date" id="a_start" value="${nextMonday()}"></div>
     <details><summary class="small">직업 구성 바꾸기 (합이 참가자 수와 같아야 함)</summary><textarea id="a_comp" style="min-height:140px;font-family:var(--font-mono);font-size:.8rem">${esc(JSON.stringify(DEFAULT_COMPOSITION, null, 1))}</textarea></details>
     <button class="btn full" type="button" id="a_go">${G ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기"}</button></div>`;
   if (!G) return startForm;
