@@ -1,0 +1,9 @@
+{
+  "name": "50인 마피아",
+  "short_name": "마피아",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#141821",
+  "theme_color": "#141821",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

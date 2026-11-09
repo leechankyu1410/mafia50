@@ -1,0 +1,407 @@
+/* 50인 마피아 웹앱 — 화면만 그린다. 모든 판정과 정보 제한은 서버(api 함수)가 한다. */
+(function () {
+"use strict";
+const cfg = window.MAFIA_CONFIG || {};
+const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+const EMAIL_RE = /^(24|25|26)\d{3}@sshs\.hs\.kr$/i;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ko = (a, b) => a.localeCompare(b, "ko-KR");
+let V = null, TAB = "home", ADMIN = null, CAM = null, lastLoad = 0;
+
+const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "청소부": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
+const DESC = {
+  police: "1명이 마피아인지 조사합니다. 결과는 내일 07:30에 옵니다.",
+  seer: "2명을 골라 둘 중에 마피아가 있는지 봅니다. 보스도 걸립니다.",
+  observer: "1명을 지켜보고, 오늘 그 사람에게 능력을 쓴 사람 명단을 받습니다.",
+  spy: "1명의 직업을 알아냅니다. 소속은 나오지 않습니다.",
+  convert: "1명을 포섭합니다. 결과는 성공/실패로만 옵니다.",
+  inquisitor: "1명을 지목합니다. 교단 팀이면 처단됩니다.",
+  contract: "시민 3명의 직업을 적습니다. 모두 맞으면 3명이 죽습니다. 동료는 적을 수 없습니다.",
+  reporter: "1명의 직업을 내일 아침 전체에 공개합니다.",
+  medium: "마피아 킬로 죽은 사람 1명을 되살립니다. 교주와 실종자는 안 됩니다.",
+  assassin: "오늘 팀이 이 사람을 찍으면 모든 보호를 무시하고 죽입니다.",
+  cleaner: "오늘 팀이 이 사람을 죽이면 실종 처리합니다.",
+  doctor: "내일 이 사람을 마피아 킬에서 1번 지킵니다. 같은 사람 연속 불가.",
+  guard: "내일 이 사람이 공격받으면 내가 대신 죽습니다.",
+  madam: "내일 이 사람의 능력을 봉인합니다. 같은 사람 연속 불가.",
+  jailer: "내일 이 사람의 능력과 킬 사진을 막습니다.",
+  silencer: "내일 이 사람이 투표하지 못하게 합니다. 같은 사람 연속 불가.",
+  priest: "내일 이 사람이 포섭되지 않게 합니다.",
+  framer: "내일 이 사람의 조사 결과(경찰·점쟁이)를 뒤집습니다.",
+  hide: "내일 하루 숨습니다. 킬과 포섭을 피하지만 투표는 못 합니다.",
+  lawyer: "오늘 이 사람이 처형되면 막습니다. 쓰는 순간 정체가 공개됩니다.",
+  letter: "1명에게 익명 메시지를 보냅니다 (하루 1번, 100자).",
+  heir: "교주가 처음 죽을 때 교주를 이을 사람입니다.",
+  hunter: "내가 죽을 때 함께 데려갈 사람입니다. 언제든 바꿀 수 있습니다.",
+  mayor: "정체를 공개하면 모두에게 시장 표시가 뜨고, 그때부터 투표권이 2표가 됩니다. 대신 의사 보호를 못 받습니다.",
+};
+const CAUSE = { mafia: "마피아 킬", vote: "투표 처형", inquisitor: "이단 심판", contract: "청부", witness: "목격자 연쇄", hunter: "사냥꾼", admin: "운영자 판정" };
+
+// ------------------------------------------------------------------ 공통
+async function api(op, data = {}) {
+  const { data: res, error } = await sb.functions.invoke("api", { body: { op, ...data } });
+  if (error) {
+    let msg = "요청에 실패했습니다.";
+    try { const j = await error.context.json(); if (j.error) msg = j.error; } catch (e) {}
+    throw new Error(msg);
+  }
+  if (res && res.error) throw new Error(res.error);
+  return res;
+}
+function toast(t, ms = 2800) { const el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => (el.hidden = true), ms); }
+function confirmBox(text, okLabel = "확인") {
+  return new Promise((res) => {
+    $("modalBox").innerHTML = `<p>${esc(text)}</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" id="mNo" type="button">취소</button><button class="btn" id="mOk" type="button">${esc(okLabel)}</button></div>`;
+    $("modal").hidden = false;
+    $("mNo").onclick = () => { $("modal").hidden = true; res(false); };
+    $("mOk").onclick = () => { $("modal").hidden = true; res(true); };
+  });
+}
+const kst = (ms) => { const d = new Date(ms + 9 * 3600e3); const p = (n) => String(n).padStart(2, "0"); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`; };
+const shortTime = (iso) => kst(Date.parse(iso)).slice(5, 16);
+const teamCls = (t) => (t === "마피아" ? "m" : t === "교단" ? "c" : "t");
+const nameOf = (sid) => { const p = V && V.everyone && V.everyone.find((x) => x.sid === sid); return p ? p.name : ""; };
+const opt = (list, sel) => list.map((p) => `<option value="${esc(p.sid)}"${p.sid === sel ? " selected" : ""}>${esc(p.name)}</option>`).join("");
+const aliveOthers = () => V.everyone.filter((x) => x.alive && x.sid !== V.me.sid);
+const aliveAll = () => V.everyone.filter((x) => x.alive);
+
+// ------------------------------------------------------------------ 로그인
+async function boot() {
+  if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.includes("YOUR-PROJECT")) {
+    $("main").innerHTML = `<div class="center"><p class="big">설정이 필요합니다</p><p class="muted">web/config.js에 Supabase 주소와 anon 키를 넣으세요.</p></div>`; return;
+  }
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return renderLogin();
+  const email = session.user.email || "";
+  await refresh(true, email);
+}
+sb.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") renderLogin(); });
+
+function renderLogin(msg) {
+  $("tabs").hidden = true; $("hday").textContent = ""; $("hname").textContent = "";
+  $("main").innerHTML = `<div class="center">
+    <p class="big">50인 마피아</p>
+    <p class="muted">학교 Google 계정(학번@sshs.hs.kr)으로 로그인하세요.</p>
+    ${msg ? `<p class="warn">${esc(msg)}</p>` : ""}
+    <button class="btn full" id="loginBtn" type="button">학교 계정으로 로그인</button>
+    ${cfg.RULEBOOK_URL ? `<a class="small" href="${esc(cfg.RULEBOOK_URL)}">규칙서 보기</a>` : ""}
+  </div>`;
+  $("loginBtn").onclick = () => sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname, queryParams: { hd: "sshs.hs.kr", prompt: "select_account" } } });
+}
+async function logout() { stopCam(); await sb.auth.signOut(); renderLogin(); }
+
+async function refresh(first, email) {
+  try {
+    V = await api("me"); lastLoad = Date.now(); V.skew = (V.now || Date.now()) - Date.now();
+    if (!V.admin && email && !EMAIL_RE.test(email)) { await sb.auth.signOut(); return renderLogin("학교 계정이 아닙니다."); }
+    render();
+  } catch (e) {
+    if (first) { await sb.auth.signOut(); return renderLogin(e.message); }
+    toast(e.message);
+  }
+}
+
+// ------------------------------------------------------------------ 화면 틀
+function render() {
+  const info = V.info || {};
+  const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "07:30 발표 전" : info.weekday ? "평일" : "주말 휴전"}`;
+  $("hday").textContent = head;
+  $("hname").innerHTML = `${esc(V.me ? V.me.name || "" : V.email || "")} · <a href="#" id="lo" class="muted">로그아웃</a>`;
+  $("lo").onclick = (e) => { e.preventDefault(); logout(); };
+  const tabs = [["home", "🏠", "홈"]];
+  if (V.me && V.me.job) tabs.push(["act", "✅", "행동"], ["people", "👥", "사람들"], ["cam", "📷", "카메라"]);
+  if (V.canSeePhotos) tabs.push(["photos", "🖼️", "사진"]);
+  if (V.admin) tabs.push(["admin", "🛠️", "관리"]);
+  if (!tabs.some((t) => t[0] === TAB)) TAB = "home";
+  $("tabs").hidden = tabs.length < 2;
+  $("tabsIn").innerHTML = tabs.map(([k, i, l]) => `<button type="button" data-tab="${k}"${k === TAB ? ' aria-current="page"' : ""}><span class="i">${i}</span>${l}</button>`).join("");
+  $("tabsIn").querySelectorAll("button").forEach((b) => (b.onclick = () => { if (TAB === "cam") stopCam(); TAB = b.dataset.tab; render(); window.scrollTo(0, 0); }));
+  const m = $("main");
+  if (TAB === "home") m.innerHTML = homeHTML();
+  if (TAB === "act") m.innerHTML = actHTML();
+  if (TAB === "people") m.innerHTML = peopleHTML();
+  if (TAB === "cam") m.innerHTML = camHTML();
+  if (TAB === "photos") { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadPhotos(); }
+  if (TAB === "admin") { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadAdmin(); }
+  bind();
+}
+
+// ------------------------------------------------------------------ 홈
+function homeHTML() {
+  if (V.status === "none") return `<div class="card"><h2>아직 게임이 만들어지지 않았습니다</h2><p class="muted">운영자가 게임을 만들면 여기서 내 직업을 볼 수 있습니다.</p>${cfg.RULEBOOK_URL ? `<a href="${esc(cfg.RULEBOOK_URL)}">규칙서 보기</a>` : ""}</div>`;
+  if (V.spectator) return `<div class="card"><h2>운영자 계정</h2><p class="muted">참가자가 아니라서 직업이 없습니다. 관리 탭을 쓰세요.</p></div>`;
+  const me = V.me, info = V.info, cls = teamCls(me.team);
+  let h = "";
+  if (V.status === "ended" || info.phase === "ended") h += `<div class="card accent ${V.winner === "mafia" ? "m" : V.winner === "cult" ? "c" : "t"}"><h2>🏁 게임 종료 — ${V.winner === "draw" ? "무승부" : ({ town: "시민", mafia: "마피아", cult: "교단" }[V.winner] || "") + " 승리"}</h2></div>`;
+  const sub = [];
+  sub.push(`${me.team} 팀`);
+  if (me.team === "마피아") sub.push(me.connected ? "접선됨" : "접선 대기");
+  if (me.disciple === "일반") sub.push("일반 신도 · 교단 머릿수에 포함");
+  if (me.group) sub.push(`동료 ${me.group}조`);
+  if (me.armor) sub.push("방탄 1회 남음");
+  if (me.mayor) sub.push("시장 공개함 · 2표");
+  h += `<div class="rolecard ${cls}"><div class="lbl">내 직업</div><div class="job">${esc(me.job)}</div><div class="lbl">${esc(sub.join(" · "))}</div></div>`;
+  if (me.job === "자유신도") h += `<p class="note c small">원래 직업은 ${esc(me.origJob)}였습니다. 다른 사람에게는 원래 직업으로 보입니다.</p>`;
+  if (!me.alive) h += `<div class="card accent n"><h3>${me.missing ? "실종되었습니다" : "사망했습니다"}</h3><p class="small muted">${me.deathDay ? `${me.deathDay}일차 · ${CAUSE[me.deathCause] || ""}` : ""}${me.missing ? " · 사망자방에 들어갈 수 없고 부활할 수 없습니다." : " · 전체방에서는 말할 수 없습니다. 내 세력이 이기면 함께 승리합니다."}</p>${V.deadChatLink ? `<a class="btn ghost" href="${esc(V.deadChatLink)}">사망자방 열기</a>` : ""}</div>`;
+  if (me.pending) h += `<div class="card accent c"><div class="between"><h3>🕯️ 교단에 포섭되었습니다</h3><span class="count small" data-deadline="${me.pending.deadline}"></span></div>
+    <button class="opt c" type="button" data-choice="자유"><b>자유신도</b><span class="small">교단 팀이 됩니다. 교단 명단을 받고 교단과 함께 이기지만, 능력을 잃습니다.</span></button>
+    <button class="opt t" type="button" data-choice="일반"><b>일반 신도</b><span class="small">시민 팀으로 남고 능력도 지킵니다. 대신 교단 머릿수에 들어갑니다.</span></button>
+    <p class="small muted">12:00까지 고르지 않으면 일반 신도가 됩니다. 한 번 고르면 바꿀 수 없습니다.</p></div>`;
+  const b = me.blocked || {}, bl = [];
+  if (b.sealed) bl.push("💋 봉인: 오늘 능력을 쓸 수 없습니다.");
+  if (b.jailed) bl.push("🔐 수감: 오늘 능력과 킬 사진을 쓸 수 없습니다.");
+  if (b.silenced) bl.push("🤐 오늘 투표할 수 없습니다.");
+  if (b.hidden) bl.push("🏚️ 오늘 숨어 있습니다. 투표할 수 없습니다.");
+  if (bl.length && me.alive) h += `<div class="card accent m">${bl.map((x) => `<p class="small">${x}</p>`).join("")}</div>`;
+  if (info.day && me.alive) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div>
+    <div class="between"><span class="small muted">내 투표권</span><b>${me.voteWeight}표</b></div>
+    ${V.mission ? `<p class="small"><b>오늘의 미션</b> ${esc(V.mission)} <span class="muted">· 카메라 탭에서 인증하면 +1표</span></p>` : ""}</div>`;
+  if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
+  if (info.phase === "night") h += `<p class="note small">00:00~07:30에는 행동할 수 없습니다. 어젯밤 결과는 07:30에 발표됩니다.</p>`;
+  h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${(V.events || []).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
+  if (cfg.RULEBOOK_URL) h += `<a class="small muted" href="${esc(cfg.RULEBOOK_URL)}" style="text-align:center">규칙서 보기</a>`;
+  return h;
+}
+
+// ------------------------------------------------------------------ 행동
+function abilityForm(a) {
+  const k = a.kind, me = V.me, today = (V.today || {})[k];
+  const sel = (id, list, cur) => `<select id="${id}"><option value="">고르세요</option>${opt(list, cur)}</select>`;
+  let inner = "", cur = today && today.target;
+  const others = aliveOthers(), all = aliveAll();
+  if (k === "seer") inner = `<div class="field"><label>첫째</label>${sel(`f_${k}_a`, others, today && today.a)}</div><div class="field"><label>둘째</label>${sel(`f_${k}_b`, others, today && today.b)}</div>`;
+  else if (k === "contract") inner = [0, 1, 2].map((i) => `<div class="row"><div class="field" style="flex:1"><label>${i + 1}번 사람</label>${sel(`f_ct_t${i}`, others)}</div><div class="field" style="flex:1"><label>직업</label><select id="f_ct_j${i}"><option value="">고르세요</option>${V.jobs.map((j) => `<option>${esc(j)}</option>`).join("")}</select></div></div>`).join("");
+  else if (k === "medium") inner = `<div class="field"><label>되살릴 사람</label>${sel(`f_${k}`, V.everyone.filter((x) => !x.alive && !x.missing), cur)}</div>`;
+  else if (k === "heir") inner = `<div class="field"><label>후계자</label>${sel(`f_${k}`, V.people.filter((x) => ["광신도", "자유신도"].includes(x.label) && x.alive), me.heir)}</div>`;
+  else if (k === "hunter") inner = `<div class="field"><label>데려갈 사람</label>${sel(`f_${k}`, others, me.hunterTarget)}</div>`;
+  else if (k === "letter") inner = `<div class="field"><label>받는 사람</label>${sel(`f_${k}`, others)}</div><div class="field"><label>내용 (100자)</label><textarea id="f_letter_body" maxlength="100"></textarea></div>`;
+  else if (k === "mayor" || k === "hide") inner = "";
+  else {
+    const self = ["doctor", "priest", "framer", "lawyer"].includes(k);
+    let list = self ? all : others;
+    if (k === "doctor") list = list.filter((x) => !(x.badges || []).includes("시장"));
+    if (k === "convert") list = list.filter((x) => !V.people.some((p) => p.sid === x.sid && ["광신도", "자유신도", "교주"].includes(p.label)));
+    inner = `<div class="field"><label>대상</label>${sel(`f_${k}`, list, cur)}</div>`;
+  }
+  const done = k === "heir" ? (me.heir ? `현재: ${nameOf(me.heir)}` : "") : k === "hunter" ? (me.hunterTarget ? `현재: ${nameOf(me.hunterTarget)}` : "") :
+    today ? `제출함: ${k === "seer" ? nameOf(today.a) + ", " + nameOf(today.b) : k === "contract" ? "청부 3명" : k === "hide" ? "내일 숨기" : nameOf(today.target)} (23:59까지 바꿀 수 있음)` : "";
+  const left = a.left != null ? `남은 횟수 ${a.left}` : a.when === "tomorrow" ? "내일 적용" : a.when === "setting" ? "설정" : "오늘";
+  const btn = k === "mayor" ? (me.mayor ? "" : `<button class="btn full" type="button" data-sub="${k}">시장임을 공개하기</button>`) : k === "hide" ? `<button class="btn full" type="button" data-sub="${k}">내일 숨기</button>` : `<button class="btn full" type="button" data-sub="${k}">${k === "letter" ? "보내기" : k === "heir" || k === "hunter" ? "저장" : "제출"}</button>`;
+  return `<div class="card"><div class="between"><h3>${esc(a.label)}</h3><span class="small muted mono">${left}</span></div><p class="small muted">${esc(DESC[k] || "")}</p>${inner}${done ? `<p class="ok">${esc(done)}</p>` : ""}${btn}</div>`;
+}
+function actHTML() {
+  const me = V.me, info = V.info;
+  if (V.status !== "running") return `<div class="card"><p class="muted">게임이 진행 중이 아닙니다.</p></div>`;
+  if (info.phase !== "open") return `<div class="card"><p class="muted">${info.phase === "night" ? "07:30부터 행동할 수 있습니다." : "아직 게임이 시작되지 않았습니다."}</p></div>`;
+  if (!me.alive) {
+    const canDispute = me.deathCause === "mafia" && me.deathDay === info.day - 1;
+    return canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었다면 운영자에게 이의를 낼 수 있습니다. 운영자가 사진을 보고 판정합니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
+  }
+  let h = "";
+  const vt = (V.today || {}).vote;
+  h += `<div class="card"><div class="between"><h3>투표</h3><span class="small muted">23:59 마감 · 내 표 ${me.voteWeight}</span></div>
+    <p class="small muted">최다 득표가 5표 이상이고 동률이 아니면 처형됩니다.</p>
+    <select id="f_vote"><option value="__skip">스킵</option>${opt(aliveAll(), vt && vt.target)}</select>
+    ${vt ? `<p class="ok">투표함: ${vt.target ? esc(nameOf(vt.target)) : "스킵"}</p>` : ""}
+    <button class="btn full" type="button" data-sub="vote"${me.blocked.silenced || me.blocked.hidden ? " disabled" : ""}>투표하기</button></div>`;
+  if (V.canKill) {
+    h += `<div class="card accent m"><div class="between"><h3>오늘 마피아 킬</h3><span class="small muted mono">${V.teamKillsToday || 0}번 시도</span></div><p class="small muted">킬은 카메라 탭에서 찍습니다. 기본 2번이고, 접선 시도는 2번까지 횟수에서 빠집니다.</p>
+      ${(V.teamKills || []).map((k) => `<p class="small">${shortTime(k.at)} · ${esc(k.by)} → ${esc(k.target)}</p>`).join("")}</div>`;
+  }
+  const abil = (V.abilities || []).filter((a) => a.kind !== "mayor" || !me.mayor);
+  if (!abil.length && !V.canKill) h += `<div class="card"><p class="small muted">${me.job === "동료" ? "동료는 특수 능력이 없습니다. 같은 조와 정보를 나누고, 미션으로 표를 늘리세요." : "쓸 수 있는 능력이 없습니다."}</p></div>`;
+  abil.forEach((a) => (h += abilityForm(a)));
+  return h;
+}
+function payloadFor(k) {
+  const v = (id) => { const e = $(id); return e ? e.value : ""; };
+  if (k === "vote") { const t = v("f_vote"); return { target: t === "__skip" ? null : t }; }
+  if (k === "seer") return { a: v(`f_${k}_a`), b: v(`f_${k}_b`) };
+  if (k === "contract") return { picks: [0, 1, 2].map((i) => ({ target: v(`f_ct_t${i}`), job: v(`f_ct_j${i}`) })) };
+  if (k === "letter") return { target: v("f_letter"), body: v("f_letter_body") };
+  if (k === "dispute") return { note: v("f_dispute") };
+  if (k === "mayor" || k === "hide") return {};
+  return { target: v(`f_${k}`) };
+}
+async function submit(k) {
+  if (k === "mayor" && !(await confirmBox("시장임을 공개할까요? 모두에게 시장 표시가 뜨고, 다시 숨길 수 없습니다.", "공개"))) return;
+  if (k === "contract" && !(await confirmBox("청부를 제출할까요? 자정에 처리되면 기회가 1번 줄어듭니다.", "제출"))) return;
+  try {
+    const r = await api("act", { kind: k, payload: payloadFor(k) });
+    V = { ...V, ...r.view, skew: (r.view.now || Date.now()) - Date.now() }; render(); toast("저장했습니다.");
+  } catch (e) { toast(e.message); }
+}
+
+// ------------------------------------------------------------------ 사람들
+function peopleHTML() {
+  let h = "";
+  if (V.people.length) h += `<div class="card"><h3>내가 아는 사람</h3>${V.people.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="small muted">${esc(p.label)}</span></div>`).join("")}</div>`;
+  else h += `<div class="card"><h3>내가 아는 사람</h3><p class="small muted">${V.me.team === "마피아" && !V.me.connected ? "아직 접선하지 못했습니다. 킬 팀이 나를 지목하거나 6일차가 되면 마피아 명단이 열립니다." : "처음부터 아는 사람이 없습니다."}</p></div>`;
+  const alive = V.everyone.filter((x) => x.alive).length;
+  h += `<div class="card"><div class="between"><h3>전체 명단</h3><span class="small muted">생존 ${alive} / ${V.everyone.length}</span></div>
+    ${V.everyone.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}${p.sid === V.me.sid ? ' <span class="small muted">(나)</span>' : ""}</span><span class="chips">${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? "" : `<span class="pill n">${p.missing ? "실종" : "사망"}</span>`}</span></div>`).join("")}</div>`;
+  return h;
+}
+
+// ------------------------------------------------------------------ 카메라
+function camHTML() {
+  const me = V.me, info = V.info;
+  if (!me.alive || V.status !== "running" || info.phase !== "open") return `<div class="card"><p class="muted">지금은 촬영할 수 없습니다.</p></div>`;
+  const purposes = [];
+  if (V.canKill && info.weekday) purposes.push(["kill", "킬 촬영"]);
+  if (info.weekday) purposes.push(["counter", "반격 (나를 찍은 사람)"]);
+  if (!(V.myPhotos || []).some((p) => p.kind === "mission")) purposes.push(["mission", "미션 인증"]);
+  if (!purposes.length) return `<div class="card"><p class="muted">오늘은 촬영할 일이 없습니다.</p></div>`;
+  const known = new Set(V.people.map((p) => p.sid));
+  const pur = (CAM && CAM.purpose) || purposes[0][0];
+  const targets = pur === "kill" ? aliveOthers().filter((x) => !(known.has(x.sid) && V.people.find((p) => p.sid === x.sid).label !== "연인")) : aliveOthers();
+  let h = `<div class="card"><div class="field"><label>무엇을 찍나요</label><select id="c_purpose">${purposes.map(([k, l]) => `<option value="${k}"${k === pur ? " selected" : ""}>${l}</option>`).join("")}</select></div>`;
+  if (pur !== "mission") h += `<div class="field"><label>${pur === "kill" ? "대상" : "나를 찍은 사람"}</label><select id="c_target"><option value="">고르세요</option>${opt(targets, CAM && CAM.target)}</select></div>`;
+  h += `<p class="small muted">${pur === "kill" ? "자고 있는 사람은 찍을 수 없습니다. 얼굴이 알아볼 수 있게 나와야 합니다." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 미션: " + esc(V.mission) : ""}</p>`;
+  if (!CAM || !CAM.session) h += `<button class="btn full" type="button" id="c_start">카메라 열기</button><p class="small muted">카메라를 연 뒤 60초 안에 찍고 보내야 합니다. 갤러리 사진은 쓸 수 없습니다.</p>`;
+  else if (!CAM.shot) h += `<div class="camwrap"><video id="c_video" playsinline autoplay muted></video><div class="stamp" id="c_stamp"></div></div><div class="row"><button class="btn" style="flex:1" type="button" id="c_shoot">촬영</button><button class="btn ghost" type="button" id="c_flip">전환</button><span class="count" id="c_count"></span></div>`;
+  else h += `<img class="ph" id="c_prev" alt="촬영한 사진" src="${CAM.shot}"><div class="row"><button class="btn" style="flex:1" type="button" id="c_send">보내기</button><button class="btn ghost" type="button" id="c_retake">다시 찍기</button><span class="count" id="c_count"></span></div>`;
+  h += `</div>`;
+  if ((V.myPhotos || []).length) h += `<div class="card"><h3>오늘 보낸 사진</h3>${V.myPhotos.map((p) => `<p class="small">${shortTime(p.at)} · ${{ kill: "킬", counter: "반격", mission: "미션" }[p.kind]}${p.target ? " · " + esc(nameOf(p.target)) : ""}</p>`).join("")}</div>`;
+  return h;
+}
+async function camStart() {
+  const purpose = $("c_purpose").value, target = $("c_target") ? $("c_target").value : null;
+  if (purpose !== "mission" && !target) return toast("대상을 고르세요.");
+  try {
+    const r = await api("capture", { step: "start", purpose, target });
+    CAM = { purpose, target, session: r.session, serverTime: r.serverTime, t0: performance.now(), code: r.code, limit: r.limitMs, facing: "environment" };
+    render(); await openStream();
+  } catch (e) { toast(e.message); }
+}
+async function openStream() {
+  try {
+    if (CAM.stream) CAM.stream.getTracks().forEach((t) => t.stop());
+    CAM.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: CAM.facing, width: { ideal: 1920 } }, audio: false });
+    const v = $("c_video"); if (v) { v.srcObject = CAM.stream; await v.play().catch(() => {}); }
+  } catch (e) { toast("카메라를 열 수 없습니다. 브라우저의 카메라 권한을 허용하세요."); }
+}
+function stopCam() { if (CAM && CAM.stream) CAM.stream.getTracks().forEach((t) => t.stop()); CAM = null; }
+const camNow = () => CAM.serverTime + (performance.now() - CAM.t0);
+function stampText() { return `${kst(camNow())} · ${CAM.code}`; }
+function shoot() {
+  const v = $("c_video"); if (!v || !v.videoWidth) return toast("카메라가 아직 준비되지 않았습니다.");
+  const scale = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight));
+  const W = Math.round(v.videoWidth * scale), H = Math.round(v.videoHeight * scale);
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const x = cv.getContext("2d"); x.drawImage(v, 0, 0, W, H);
+  const bh = Math.max(36, Math.round(W * 0.06));
+  x.fillStyle = "rgba(0,0,0,.6)"; x.fillRect(0, H - bh, W, bh);
+  x.fillStyle = "#fff"; x.font = `500 ${Math.round(bh * 0.42)}px monospace`; x.textBaseline = "middle";
+  x.fillText(stampText(), Math.round(bh * 0.3), H - bh / 2);
+  CAM.shot = cv.toDataURL("image/jpeg", 0.75);
+  if (CAM.stream) CAM.stream.getTracks().forEach((t) => t.stop()); CAM.stream = null;
+  render();
+}
+async function camSend() {
+  try {
+    const r = await api("capture", { step: "finish", session: CAM.session, image: CAM.shot });
+    stopCam(); toast(r.message, 4000); await refresh();
+  } catch (e) { toast(e.message, 4000); stopCam(); render(); }
+}
+setInterval(() => {
+  document.querySelectorAll("[data-deadline]").forEach((el) => {
+    const left = Number(el.dataset.deadline) - (Date.now() + ((V && V.skew) || 0));
+    el.textContent = left > 0 ? `${Math.floor(left / 3600e3)}시간 ${Math.floor((left % 3600e3) / 60e3)}분 남음` : "마감";
+  });
+  if (CAM && CAM.session) {
+    const left = Math.max(0, Math.ceil((CAM.limit - (performance.now() - CAM.t0)) / 1000));
+    const c = $("c_count"); if (c) c.textContent = `${left}초`;
+    const s = $("c_stamp"); if (s) s.textContent = stampText();
+    if (left === 0 && !CAM.expired) { CAM.expired = true; toast("60초가 지났습니다. 카메라를 다시 여세요."); stopCam(); render(); }
+  }
+}, 500);
+
+// ------------------------------------------------------------------ 사진 (수사관·사망자)
+async function loadPhotos() {
+  try {
+    const r = await api("photos");
+    $("main").innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">누가 찍었는지는 나오지 않습니다. 실종 처리된 킬은 없습니다.</p></div>` +
+      (r.photos.length ? r.photos.map((p) => `<div class="card"><div class="between"><b>${esc(p.target)}</b><span class="small muted">${p.day}일차</span></div><img class="ph" loading="lazy" alt="${esc(p.target)} 킬 사진" src="${esc(p.url)}"></div>`).join("") : `<div class="card"><p class="muted small">아직 사진이 없습니다.</p></div>`);
+  } catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
+}
+
+// ------------------------------------------------------------------ 관리자
+function nextMonday() { const d = new Date(Date.now() + 9 * 3600e3); const add = ((8 - d.getUTCDay()) % 7) || 7; d.setUTCDate(d.getUTCDate() + add); return d.toISOString().slice(0, 10); }
+async function loadAdmin() {
+  try { ADMIN = await api("admin_overview"); $("main").innerHTML = adminHTML(); bindAdmin(); }
+  catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
+}
+function adminHTML() {
+  const S = ADMIN.state;
+  const startForm = `<div class="card"><h3>게임 만들기</h3>
+    <div class="field"><label>시작일 (월요일)</label><input type="date" id="a_start" value="${nextMonday()}"></div>
+    <div class="field"><label>사망자방 링크 (선택)</label><input type="text" id="a_dead" placeholder="https://open.kakao.com/..."></div>
+    <div class="field"><label>직업 구성 (합이 참가자 수와 같아야 함)</label><textarea id="a_comp" style="min-height:140px;font-family:var(--font-mono);font-size:.8rem">${esc(JSON.stringify(DEFAULT_COMPOSITION, null, 1))}</textarea></div>
+    <button class="btn full" type="button" id="a_go">${S ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기 (직업 무작위 배정)"}</button></div>`;
+  if (!S) return startForm;
+  const P = Object.values(S.players).sort((a, b) => ko(a.name, b.name));
+  const name = (sid) => (S.players[sid] ? S.players[sid].name : sid || "");
+  const info = ADMIN.info;
+  let h = `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${S.status === "running" ? "t" : "n"}">${S.status}</span></div>
+    <p class="small">${info.day}일차 · ${info.phase} · 처리 완료 ${S.resolvedThrough}일차 · 게임 시각 ${kst(ADMIN.now)}</p>
+    <p class="small muted">생존 ${P.filter((p) => p.alive).length}명 · 마피아 ${P.filter((p) => p.alive && p.team === "mafia").length} · 교단 팀 ${P.filter((p) => p.alive && p.team === "cult").length} · 일반 신도 ${P.filter((p) => p.alive && p.disciple === "일반").length}${S.winner ? " · 승자 " + S.winner : ""}</p>
+    <div class="row"><button class="btn ghost" type="button" id="a_pause">${S.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div></div>`;
+  h += `<div class="card"><h3>설정</h3><div class="field"><label>사망자방 링크</label><input type="text" id="a_dead2" value="${esc(S.config.deadChatLink || "")}"></div>
+    <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${S.config.clockOffsetMin || 0}"></div>
+    <div class="row"><button class="btn ghost" type="button" data-off="60">+1시간</button><button class="btn ghost" type="button" data-off="1440">+1일</button><button class="btn ghost" type="button" data-off="reset">0으로</button></div>
+    <button class="btn full" type="button" id="a_save">설정 저장</button></div>`;
+  h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
+  const disputes = (ADMIN.actions || []).filter((a) => a.kind === "dispute");
+  if (disputes.length) h += `<div class="card accent m"><h3>이의 제기</h3>${disputes.map((d) => `<div class="person"><span class="small">${d.day}일차 · <b>${esc(name(d.actor))}</b>: ${esc(d.payload.note || "")}</span><button class="btn ghost small" type="button" data-revive="${d.actor}">되살리기</button></div>`).join("")}<p class="small muted">아래 사진 목록에서 해당 킬 사진을 확인하고 판정하세요.</p></div>`;
+  h += `<div class="card"><h3>참가자 (운영자만 보는 정보)</h3><div class="tw"><table><tr><th>이름</th><th>직업</th><th>팀</th><th>상태</th><th></th></tr>${P.map((p) => `<tr><td>${esc(p.name)}<br><span class="muted mono">${p.sid}</span></td><td>${esc(p.job)}${p.job !== p.origJob ? `<br><span class="muted">원래 ${esc(p.origJob)}</span>` : ""}${p.group ? `<br><span class="muted">${p.group}조</span>` : ""}</td><td>${p.team}${p.disciple ? `<br>${p.disciple} 신도` : ""}${p.pending ? "<br>선택 대기" : ""}${p.team === "mafia" ? `<br>${p.connected ? "접선" : "대기"}` : ""}</td><td>${p.alive ? "생존" : `사망 ${p.deathDay}일 ${CAUSE[p.deathCause] || ""}${p.missing ? " 실종" : ""}`}</td><td>${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</td></tr>`).join("")}</table></div></div>`;
+  h += `<div class="card"><h3>최근 행동</h3><div class="tw"><table><tr><th>시각</th><th>누가</th><th>무엇</th><th>대상</th></tr>${(ADMIN.actions || []).slice(0, 120).map((a) => `<tr><td class="mono">${shortTime(a.at)}</td><td>${esc(name(a.actor))}</td><td>${esc(a.kind)}</td><td>${esc(a.payload.target ? name(a.payload.target) : a.payload.a ? name(a.payload.a) + ", " + name(a.payload.b) : a.payload.picks ? a.payload.picks.map((x) => name(x.target) + "=" + x.job).join(", ") : a.payload.choice || "")}</td></tr>`).join("")}</table></div></div>`;
+  h += `<div class="card"><h3>사진</h3>${(ADMIN.photos || []).slice(0, 60).map((p) => `<div class="card"><div class="between"><span class="small">${p.day}일차 · ${p.kind} · ${esc(p.by)}${p.target ? " → " + esc(p.target) : ""}${p.success ? " · 성공" : ""}${p.rejected ? " · 반려됨" : ""}</span>${p.kind === "mission" && !p.rejected ? `<button class="btn ghost small" type="button" data-reject="${p.id}">반려</button>` : ""}</div><img class="ph" loading="lazy" alt="" src="${esc(p.url)}"></div>`).join("") || `<p class="small muted">없음</p>`}</div>`;
+  h += `<div class="card"><h3>알림 기록</h3><div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)} · ${e.audience.includes("*") ? "전체" : e.audience.map(name).join(", ")}</div>${esc(e.text)}</div>`).join("")}</div></div>`;
+  h += startForm;
+  h += `<div class="card accent m"><h3>초기화</h3><p class="small muted">게임 상태와 모든 기록을 지웁니다. 확인란에 "초기화"를 적으세요.</p><input type="text" id="a_rst"><button class="btn danger full" type="button" id="a_rstb">초기화</button></div>`;
+  return h;
+}
+function bindAdmin() {
+  const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+  const run = async (op, data, msg) => { try { await api(op, data); toast(msg || "완료"); await refresh(); } catch (e) { toast(e.message); } };
+  on("a_go", async () => {
+    let comp; try { comp = JSON.parse($("a_comp").value); } catch { return toast("직업 구성 JSON이 올바르지 않습니다."); }
+    if (!(await confirmBox(`${$("a_start").value}에 시작하는 게임을 만들고 직업을 무작위로 배정할까요?${ADMIN.state ? " 기존 기록은 모두 지워집니다." : ""}`, "만들기"))) return;
+    run("admin_start", { startDate: $("a_start").value, composition: comp, deadChatLink: $("a_dead").value, force: true }, "게임을 만들었습니다.");
+  });
+  on("a_reload", () => loadAdmin());
+  on("a_pause", () => run("admin_set", { status: ADMIN.state.status === "paused" ? "running" : "paused" }));
+  on("a_save", () => run("admin_set", { deadChatLink: $("a_dead2").value, clockOffsetMin: Number($("a_off").value) || 0 }, "저장했습니다."));
+  document.querySelectorAll("[data-off]").forEach((b) => (b.onclick = () => { const o = $("a_off"); o.value = b.dataset.off === "reset" ? 0 : (Number(o.value) || 0) + Number(b.dataset.off); }));
+  on("a_annb", () => run("admin_announce", { text: $("a_ann").value }, "공지를 보냈습니다."));
+  on("a_rstb", async () => { if (await confirmBox("정말 초기화할까요?", "초기화")) run("admin_reset", { confirm: $("a_rst").value }, "초기화했습니다."); });
+  document.querySelectorAll("[data-revive]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${ADMIN.state.players[b.dataset.revive].name} 님을 되살릴까요? 전체에 공지됩니다.`, "되살리기")) run("admin_player", { sid: b.dataset.revive, action: "revive" }); }));
+  document.querySelectorAll("[data-kill]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${ADMIN.state.players[b.dataset.kill].name} 님을 게임에서 제외할까요? 전체에 공지됩니다.`, "제외")) run("admin_player", { sid: b.dataset.kill, action: "kill" }); }));
+  document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => run("admin_reject_photo", { id: Number(b.dataset.reject) }, "반려했습니다.")));
+}
+
+// ------------------------------------------------------------------ 이벤트 연결
+function bind() {
+  const r = $("reload"); if (r) r.onclick = () => refresh();
+  document.querySelectorAll("[data-sub]").forEach((b) => (b.onclick = () => submit(b.dataset.sub)));
+  document.querySelectorAll("[data-choice]").forEach((b) => (b.onclick = async () => {
+    const c = b.dataset.choice;
+    if (!(await confirmBox(c === "자유" ? "자유신도가 되면 교단 팀이 되고 능력을 잃습니다. 바꿀 수 없습니다." : "일반 신도로 남으면 시민 팀이고 능력도 그대로지만, 교단 머릿수에 들어갑니다. 바꿀 수 없습니다.", c === "자유" ? "자유신도" : "일반 신도"))) return;
+    try { const res = await api("act", { kind: "choice", payload: { choice: c } }); V = { ...V, ...res.view }; render(); toast("선택했습니다."); } catch (e) { toast(e.message); }
+  }));
+  const p = $("c_purpose"); if (p) p.onchange = () => { stopCam(); CAM = { purpose: p.value }; render(); };
+  const t = $("c_target"); if (t) t.onchange = () => { CAM = { ...(CAM || {}), purpose: $("c_purpose").value, target: t.value }; };
+  const s = $("c_start"); if (s) s.onclick = camStart;
+  const sh = $("c_shoot"); if (sh) sh.onclick = shoot;
+  const fl = $("c_flip"); if (fl) fl.onclick = () => { CAM.facing = CAM.facing === "environment" ? "user" : "environment"; openStream(); };
+  const se = $("c_send"); if (se) se.onclick = camSend;
+  const re = $("c_retake"); if (re) re.onclick = async () => { CAM.shot = null; render(); await openStream(); };
+  if (TAB === "cam" && CAM && CAM.session && !CAM.shot && CAM.stream) { const v = $("c_video"); if (v && !v.srcObject) { v.srcObject = CAM.stream; v.play().catch(() => {}); } }
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden && V && TAB !== "cam" && TAB !== "admin" && Date.now() - lastLoad > 20000) refresh(); });
+setInterval(() => { if (!document.hidden && V && V.status && TAB !== "cam" && TAB !== "admin" && Date.now() - lastLoad > 60000) refresh(); }, 15000);
+boot();
+})();

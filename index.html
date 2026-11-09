@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#141821">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>50인 마피아</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f5f8; --surface:#fff; --ink:#141821; --muted:#5b6271; --line:#e2e5eb; --chip:#eceef3;
+  --town:#2360c4; --mafia:#c4303a; --cult:#7142c4; --town-soft:#e7eefa; --mafia-soft:#fbe8e9; --cult-soft:#f0e9fb;
+  --ok:#1d7a4c; --warn:#a15c00;
+  --font-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0e1015; --surface:#171a22; --ink:#e8ebf1; --muted:#9aa1b0; --line:#282c36; --chip:#21252f;
+  --town:#76a2f0; --mafia:#ef6e76; --cult:#a989ee; --town-soft:#18233a; --mafia-soft:#331a1e; --cult-soft:#251d3a;
+  --ok:#4fc68a; --warn:#e3a44a; color-scheme:dark;}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15.5px;line-height:1.6;-webkit-text-size-adjust:100%}
+h1,h2,h3{margin:0;line-height:1.3;text-wrap:balance}
+h2{font-size:1.15rem} h3{font-size:1rem}
+p{margin:0}
+button,select,input,textarea{font:inherit;color:inherit}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.86rem}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+.hrow{max-width:640px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.brand{font-weight:700}
+.brand small{font-weight:500;color:var(--muted);margin-left:6px;font-size:.8rem}
+main{max-width:640px;margin:0 auto;padding:16px 16px calc(96px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom)}
+nav.tabs .in{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;max-width:640px;width:100%}
+nav.tabs button{background:none;border:none;padding:10px 0 12px;color:var(--muted);font-size:.8rem;font-weight:500;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav.tabs button .i{font-size:1.15rem;line-height:1}
+nav.tabs button[aria-current="page"]{color:var(--ink);font-weight:700}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.card.accent{border-left:4px solid var(--c)}
+.t{--c:var(--town);--s:var(--town-soft)} .m{--c:var(--mafia);--s:var(--mafia-soft)} .c{--c:var(--cult);--s:var(--cult-soft)} .n{--c:var(--muted);--s:var(--chip)}
+.pill{display:inline-block;font-size:.75rem;font-weight:700;padding:1px 8px;border-radius:999px;background:var(--s,var(--chip));color:var(--c,var(--muted));white-space:nowrap}
+.rolecard{border-radius:16px;padding:16px;color:#fff;background:var(--c);display:flex;flex-direction:column;gap:2px}
+.rolecard .job{font-size:1.6rem;font-weight:700}
+.rolecard .lbl{font-size:.82rem;opacity:.9}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.8rem;color:var(--muted);font-weight:500}
+select,input[type=text],input[type=date],input[type=number],textarea{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;width:100%}
+textarea{min-height:70px;resize:vertical}
+.btn{background:var(--ink);color:var(--bg);border:none;border-radius:10px;padding:11px 14px;font-weight:700;cursor:pointer}
+.btn.ghost{background:var(--chip);color:var(--ink)}
+.btn.danger{background:var(--mafia);color:#fff}
+.btn.full{width:100%}
+.btn:disabled{opacity:.45}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--town);outline-offset:2px}
+.note{border-left:3px solid var(--c,var(--muted));background:var(--s,var(--chip));padding:9px 12px;border-radius:0 10px 10px 0;font-size:.9rem}
+.ok{color:var(--ok);font-size:.88rem;font-weight:500}
+.warn{color:var(--warn);font-size:.88rem;font-weight:500}
+.feed{display:flex;flex-direction:column}
+.ev{padding:10px 0;border-bottom:1px solid var(--line);white-space:pre-line;font-size:.93rem}
+.ev:last-child{border-bottom:none}
+.ev .meta{font-size:.75rem;color:var(--muted);margin-bottom:2px}
+.ev.mine{border-left:3px solid var(--town);padding-left:10px}
+.person{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);gap:8px}
+.person:last-child{border-bottom:none}
+.person.dead .nm{text-decoration:line-through;color:var(--muted)}
+.chips{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.opt{display:flex;flex-direction:column;gap:2px;text-align:left;border:1.5px solid var(--c);background:var(--s);border-radius:12px;padding:10px 12px;cursor:pointer}
+.opt b{color:var(--c)}
+video,canvas,img.ph{width:100%;border-radius:12px;display:block;background:#000}
+.camwrap{position:relative}
+.camwrap .stamp{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-family:var(--font-mono);font-size:.8rem;padding:6px 10px;border-radius:0 0 12px 12px}
+.count{font-family:var(--font-mono);font-weight:700}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:12px;font-size:.9rem;z-index:20;max-width:90vw}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px}
+.modal .box{background:var(--surface);border-radius:16px;padding:18px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:12px}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th,td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.tw{overflow-x:auto}
+.center{min-height:70vh;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.big{font-size:1.5rem;font-weight:700}
+</style>
+</head>
+<body>
+<header><div class="hrow"><div class="brand">50인 마피아<small id="hday"></small></div><div class="small muted" id="hname"></div></div></header>
+<main id="main"><div class="center"><p class="muted">불러오는 중…</p></div></main>
+<nav class="tabs" id="tabs" hidden><div class="in" id="tabsIn"></div></nav>
+<div id="toast" class="toast" hidden></div>
+<div id="modal" class="modal" hidden><div class="box" id="modalBox"></div></div>
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
