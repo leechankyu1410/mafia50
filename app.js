@@ -236,14 +236,46 @@ async function submit(k) {
   } catch (e) { toast(e.message); }
 }
 
+// ------------------------------------------------------------------ 메모 (이 휴대폰에만 저장)
+const MEMO_JOBS = [
+  ["시민 쪽", ["시민 (직업 모름)", "경찰", "점쟁이", "관찰자", "수사관", "기자", "목격자", "의사", "경호원", "군인", "은둔자", "사제", "영매", "이단심판관", "교도관", "선도부장", "사냥꾼", "시장", "변호사", "우체부", "연인", "동료"]],
+  ["마피아 쪽", ["마피아 (직업 모름)", "보스", "암살자", "추적자", "마담", "스파이", "조작범", "청부업자"]],
+  ["교단 쪽", ["교단 (직업 모름)", "교주", "광신도", "자유신도", "일반 신도"]],
+];
+const memoTeam = (job) => { for (const [g, l] of MEMO_JOBS) if (l.includes(job)) return g === "마피아 쪽" ? "m" : g === "교단 쪽" ? "c" : "t"; return "n"; };
+const memoKey = () => `m50memo:${V && V.me ? V.me.sid : "x"}`;
+function memoLoad() { try { return JSON.parse(localStorage.getItem(memoKey()) || "{}"); } catch (e) { return {}; } }
+function memoSave(m) { try { localStorage.setItem(memoKey(), JSON.stringify(m)); return true; } catch (e) { toast("이 브라우저에서는 메모를 저장할 수 없습니다."); return false; } }
+let MEMO_ONLY = false;
+function openMemo(sid) {
+  const m = memoLoad(), cur = m[sid] || {};
+  $("modalBox").innerHTML = `<h3>${esc(nameOf(sid))} 메모</h3>
+    <div class="field"><label>의심되는 직업</label><select id="mm_job"><option value="">정하지 않음</option>${MEMO_JOBS.map(([g, l]) => `<optgroup label="${g}">${l.map((j) => `<option${j === cur.job ? " selected" : ""}>${esc(j)}</option>`).join("")}</optgroup>`).join("")}</select></div>
+    <div class="field"><label>메모</label><textarea id="mm_txt" maxlength="300" placeholder="예: 3일차에 경찰이라고 주장함">${esc(cur.text || "")}</textarea></div>
+    <p class="small muted">이 휴대폰에만 저장되고 아무에게도 보이지 않습니다.</p>
+    <div class="row" style="justify-content:space-between"><button class="btn ghost" type="button" id="mm_del">지우기</button><div class="row"><button class="btn ghost" type="button" id="mm_no">닫기</button><button class="btn" type="button" id="mm_ok">저장</button></div></div>`;
+  $("modal").hidden = false;
+  const close = () => { $("modal").hidden = true; };
+  $("mm_no").onclick = close;
+  $("mm_del").onclick = () => { const mm = memoLoad(); delete mm[sid]; memoSave(mm); close(); render(); };
+  $("mm_ok").onclick = () => {
+    const mm = memoLoad(), job = $("mm_job").value, text = $("mm_txt").value.trim();
+    if (job || text) mm[sid] = { job, text, at: Date.now() }; else delete mm[sid];
+    if (memoSave(mm)) { close(); render(); }
+  };
+}
+
 // ------------------------------------------------------------------ 사람들
 function peopleHTML() {
   let h = "";
   if (V.people.length) h += `<div class="card"><h3>내가 아는 사람</h3>${V.people.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="small muted">${esc(p.label)}</span></div>`).join("")}</div>`;
   else h += `<div class="card"><h3>내가 아는 사람</h3><p class="small muted">${V.me.team === "마피아" && !V.me.connected ? "아직 접선하지 못했습니다. 킬 팀이 나를 지목하거나 평일 5일이 지나면 마피아 명단이 열립니다." : "처음부터 아는 사람이 없습니다."}</p></div>`;
   const alive = V.everyone.filter((x) => x.alive).length;
+  const memo = memoLoad();
+  const list = V.everyone.filter((p) => !MEMO_ONLY || memo[p.sid]);
   h += `<div class="card"><div class="between"><h3>전체 명단</h3><span class="small muted">생존 ${alive} / ${V.everyone.length}</span></div>
-    ${V.everyone.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}${p.sid === V.me.sid ? ' <span class="small muted">(나)</span>' : ""}</span><span class="chips">${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? "" : `<span class="pill n">${p.missing ? "실종" : "사망"}</span>`}</span></div>`).join("")}</div>`;
+    <div class="between"><span class="small muted">이름을 누르면 의심 직업과 메모를 적을 수 있습니다.</span><button class="btn ghost small" type="button" id="memoOnly">${MEMO_ONLY ? "전체 보기" : "메모한 사람만"}</button></div>
+    ${list.map((p) => { const mm = memo[p.sid]; return `<div class="person${p.alive ? "" : " dead"}" data-memo="${esc(p.sid)}" role="button" tabindex="0" style="cursor:pointer"><span><span class="nm">${esc(p.name)}${p.sid === V.me.sid ? ' <span class="small muted">(나)</span>' : ""}</span>${mm && mm.text ? `<br><span class="small muted">${esc(mm.text.length > 40 ? mm.text.slice(0, 40) + "…" : mm.text)}</span>` : ""}</span><span class="chips">${mm && mm.job ? `<span class="pill ${memoTeam(mm.job)}">${esc(mm.job)}?</span>` : ""}${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? "" : `<span class="pill n">${p.missing ? "실종" : "사망"}</span>`}</span></div>`; }).join("") || `<p class="small muted">메모한 사람이 없습니다.</p>`}</div>`;
   return h;
 }
 
@@ -395,6 +427,8 @@ function bindAdmin() {
 // ------------------------------------------------------------------ 이벤트 연결
 function bind() {
   const r = $("reload"); if (r) r.onclick = () => refresh();
+  document.querySelectorAll("[data-memo]").forEach((el) => { el.onclick = () => openMemo(el.dataset.memo); el.onkeydown = (e) => { if (e.key === "Enter") openMemo(el.dataset.memo); }; });
+  const mo = $("memoOnly"); if (mo) mo.onclick = () => { MEMO_ONLY = !MEMO_ONLY; render(); };
   document.querySelectorAll("[data-sub]").forEach((b) => (b.onclick = () => submit(b.dataset.sub)));
   document.querySelectorAll("[data-choice]").forEach((b) => (b.onclick = async () => {
     const c = b.dataset.choice;
