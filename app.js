@@ -131,7 +131,7 @@ function render() {
 // ------------------------------------------------------------------ 홈
 function homeHTML() {
   if (V.status === "none") return `<div class="card"><h2>아직 게임이 만들어지지 않았습니다</h2><p class="muted">운영자가 게임을 만들면 여기서 내 직업을 볼 수 있습니다.</p>${cfg.RULEBOOK_URL ? `<a href="${esc(cfg.RULEBOOK_URL)}">규칙서 보기</a>` : ""}</div>`;
-  if (V.spectator) return `<div class="card"><h2>운영자 계정</h2><p class="muted">참가자가 아니라서 직업이 없습니다. 관리 탭을 쓰세요.</p></div>`;
+  if (V.spectator) return `<div class="card"><h2>운영자 계정</h2><p class="muted">참가자가 아니라서 직업이 없습니다. 관리 탭을 쓰세요.</p></div>` + qaCardHTML();
   const me = V.me, info = V.info, cls = teamCls(me.team);
   let h = "";
   if (V.status === "ended" || info.phase === "ended") h += `<div class="card accent ${V.winner === "mafia" ? "m" : V.winner === "cult" ? "c" : "t"}"><h2>🏁 게임 종료 — ${V.winner === "draw" ? "무승부" : ({ town: "시민", mafia: "마피아", cult: "교단" }[V.winner] || "") + " 승리"}</h2></div>`;
@@ -161,8 +161,23 @@ function homeHTML() {
   if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
   if (info.phase === "night") h += `<p class="note small">00:00~07:30에는 행동할 수 없습니다. 어젯밤 결과는 07:30에 발표됩니다.</p>`;
   h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${(V.events || []).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
+  h += qaCardHTML();
   if (cfg.RULEBOOK_URL) h += `<a class="small muted" href="${esc(cfg.RULEBOOK_URL)}" style="text-align:center">규칙서 보기</a>`;
   return h;
+}
+let QA = null;
+function qaCardHTML() {
+  return `<div class="card"><div class="between"><h3>익명 질문</h3><button class="btn ghost small" type="button" id="qaLoad">${QA ? "새로고침" : "답변 보기"}</button></div>
+    <p class="small muted">규칙이 헷갈리면 운영자에게 물어보세요. 이름은 남지 않지만, <b>질문과 답변은 전체에 공개됩니다.</b> 직업이 드러나는 내용은 조심하세요. 하루 3번까지 할 수 있습니다.</p>
+    <textarea id="qaText" maxlength="300" placeholder="예: 일반 신도도 교단 머릿수에 들어가나요?"></textarea>
+    <button class="btn full" type="button" id="qaSend">익명으로 질문하기</button>
+    ${QA ? (QA.length ? QA.map((q) => `<div class="ev"><div class="meta">${shortTime(q.answered_at)}</div><b>Q.</b> ${esc(q.text)}\n<b>A.</b> ${esc(q.answer)}</div>`).join("") : `<p class="small muted">아직 답변된 질문이 없습니다.</p>`) : ""}</div>`;
+}
+async function qaLoad() { try { QA = (await api("qa_list")).questions; render(); } catch (e) { toast(e.message); } }
+async function qaSend() {
+  const t = $("qaText").value.trim(); if (!t) return toast("질문을 적으세요.");
+  if (!(await confirmBox("이 질문을 보낼까요? 운영자가 답하면 질문과 답이 전체에 공개됩니다.", "보내기"))) return;
+  try { const r = await api("qa_ask", { text: t }); $("qaText").value = ""; toast(r.message, 3500); } catch (e) { toast(e.message); }
 }
 
 // ------------------------------------------------------------------ 행동
@@ -374,7 +389,10 @@ async function loadPhotos() {
 // ------------------------------------------------------------------ 관리자
 function nextMonday() { const d = new Date(Date.now() + 9 * 3600e3); const add = ((8 - d.getUTCDay()) % 7) || 7; d.setUTCDate(d.getUTCDate() + add); return d.toISOString().slice(0, 10); }
 async function loadAdmin() {
-  try { ADMIN = await api("admin_overview"); $("main").innerHTML = adminHTML(); bindAdmin(); }
+  try {
+    const [ov, qa] = await Promise.all([api("admin_overview"), api("admin_qa").catch(() => ({ pending: [], answered: [] }))]);
+    ADMIN = ov; ADMIN.qa = qa; $("main").innerHTML = adminHTML(); bindAdmin();
+  }
   catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
 }
 function adminHTML() {
@@ -393,6 +411,10 @@ function adminHTML() {
   const ms = ADMIN.missions || [];
   h += `<div class="card"><h3>미션 인증 확인</h3><p class="small muted">누가 올렸는지는 보이지 않습니다. 미션과 맞지 않는 사진만 반려하세요. 반려하면 그 조의 +1표가 취소됩니다.</p>
     ${ms.length ? ms.map((m) => `<div class="card"><div class="between"><span class="small">${m.day}일차 · ${esc(m.mission)}${m.rejected ? " · <b>반려됨</b>" : ""}</span>${m.rejected ? "" : `<button class="btn ghost small" type="button" data-reject="${m.id}">반려</button>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("") : `<p class="small muted">최근 이틀 동안 올라온 미션 사진이 없습니다.</p>`}</div>`;
+  const qp = (ADMIN.qa && ADMIN.qa.pending) || [];
+  h += `<div class="card"><div class="between"><h3>익명 질문</h3><span class="small muted">답변 대기 ${qp.length}</span></div>
+    <p class="small muted">질문자 이름은 저장되지 않습니다. 답하면 질문과 답이 전체 알림으로 공개됩니다. 게임 정보를 흘리려는 질문이나 장난은 지우세요.</p>
+    ${qp.length ? qp.map((q) => `<div class="card"><p class="small muted">${shortTime(q.created_at)}</p><p>${esc(q.text)}</p><textarea id="qa_a_${q.id}" placeholder="답변"></textarea><div class="row"><button class="btn" style="flex:1" type="button" data-qa-answer="${q.id}">답하고 공개</button><button class="btn ghost" type="button" data-qa-del="${q.id}">지우기</button></div></div>`).join("") : `<p class="small muted">대기 중인 질문이 없습니다.</p>`}</div>`;
   h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
   h += `<div class="card"><h3>설정</h3>
     <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${G.clockOffsetMin || 0}"></div>
@@ -421,6 +443,14 @@ function bindAdmin() {
   const pn = (sid) => (ADMIN.players.find((p) => p.sid === sid) || {}).name || sid;
   document.querySelectorAll("[data-revive]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${pn(b.dataset.revive)} 님을 되살릴까요? 전체에 공지됩니다.`, "되살리기")) run("admin_player", { sid: b.dataset.revive, action: "revive" }); }));
   document.querySelectorAll("[data-kill]").forEach((b) => (b.onclick = async () => { if (await confirmBox(`${pn(b.dataset.kill)} 님을 게임에서 제외할까요? 전체에 공지됩니다.`, "제외")) run("admin_player", { sid: b.dataset.kill, action: "kill" }); }));
+  document.querySelectorAll("[data-qa-answer]").forEach((b) => (b.onclick = async () => {
+    const a = $("qa_a_" + b.dataset.qaAnswer).value.trim(); if (!a) return toast("답변을 적으세요.");
+    try { await api("admin_qa_answer", { id: Number(b.dataset.qaAnswer), answer: a }); toast("답하고 공개했습니다."); loadAdmin(); } catch (e) { toast(e.message); }
+  }));
+  document.querySelectorAll("[data-qa-del]").forEach((b) => (b.onclick = async () => {
+    if (!(await confirmBox("이 질문을 지울까요? 공개되지 않습니다.", "지우기"))) return;
+    try { await api("admin_qa_delete", { id: Number(b.dataset.qaDel) }); toast("지웠습니다."); loadAdmin(); } catch (e) { toast(e.message); }
+  }));
   document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = () => run("admin_reject_photo", { id: Number(b.dataset.reject) }, "반려했습니다.")));
 }
 
@@ -429,6 +459,8 @@ function bind() {
   const r = $("reload"); if (r) r.onclick = () => refresh();
   document.querySelectorAll("[data-memo]").forEach((el) => { el.onclick = () => openMemo(el.dataset.memo); el.onkeydown = (e) => { if (e.key === "Enter") openMemo(el.dataset.memo); }; });
   const mo = $("memoOnly"); if (mo) mo.onclick = () => { MEMO_ONLY = !MEMO_ONLY; render(); };
+  const ql = $("qaLoad"); if (ql) ql.onclick = qaLoad;
+  const qs = $("qaSend"); if (qs) qs.onclick = qaSend;
   document.querySelectorAll("[data-sub]").forEach((b) => (b.onclick = () => submit(b.dataset.sub)));
   document.querySelectorAll("[data-choice]").forEach((b) => (b.onclick = async () => {
     const c = b.dataset.choice;
