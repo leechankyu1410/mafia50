@@ -22,7 +22,7 @@ function setReveal(on) {
 
 const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "추적자": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
 const DESC = {
-  police: "1명이 마피아인지 조사합니다. 결과는 내일 07:30에 옵니다.",
+  police: "1명이 마피아인지 조사합니다. 결과는 오늘 자정에 옵니다.",
   seer: "2명을 골라 둘 중에 마피아가 있는지 봅니다. 보스도 걸립니다.",
   observer: "1명을 지켜보고, 오늘 그 사람에게 능력을 쓴 사람 명단을 받습니다.",
   spy: "1명의 직업을 알아냅니다. 소속은 나오지 않습니다.",
@@ -189,8 +189,10 @@ function homeHTML() {
   if (info.day) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div></div>`;
   h += REVEAL || V.status === "ended" ? priv : lockHTML("내 직업과 개인 정보가 가려져 있습니다.");
   if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
-  if (info.phase === "night") h += `<p class="note small">00:00~07:30에는 행동할 수 없습니다. 어젯밤 결과는 07:30에 발표됩니다.</p>`;
+  if (info.phase === "night") h += `<p class="note small">결과는 자정에 발표됩니다. 00:00~07:30에는 행동할 수 없고, 07:30부터 다시 행동과 투표가 열립니다.</p>`;
   h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${REVEAL || V.status === "ended" ? "" : `<p class="small muted">🔒 나에게만 온 알림은 가려져 있습니다.</p>`}${(V.events || []).filter((e) => REVEAL || V.status === "ended" || !e.mine).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
+  const vh = V.voteHistory || [];
+  if (vh.length) h += `<details class="card"><summary><b>지난 투표 결과</b> <span class="small muted">${vh.length}일치</span></summary>${vh.map((d) => `<div class="ev"><div class="meta">${d.day}일차${d.executed.length ? " · 처형 " + d.executed.map(esc).join(", ") : " · 처형 없음"}</div>${d.tally.length ? d.tally.map(([n, c]) => `${esc(n)} ${c}표`).join(" · ") : "투표 없음"}</div>`).join("")}<p class="small muted">누가 투표했는지는 게임이 끝나면 공개됩니다.</p></details>`;
   h += qaCardHTML();
   if (cfg.RULEBOOK_URL) h += `<a class="small muted" href="${esc(cfg.RULEBOOK_URL)}" style="text-align:center">규칙서 보기</a>`;
   return h;
