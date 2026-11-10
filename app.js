@@ -8,6 +8,13 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const ko = (a, b) => a.localeCompare(b, "ko-KR");
 let V = null, TAB = "home", ADMIN = null, CAM = null, lastLoad = 0;
+// 가리기: 앱을 열거나 다른 앱에 다녀오면 직업·개인 정보가 가려진다
+let REVEAL = false, lastTouch = Date.now();
+const HIDE_AFTER_MS = 3 * 60 * 1000;
+function lockHTML(what) {
+  return `<div class="card lock" style="text-align:center;align-items:center"><p class="big" aria-hidden="true">🔒</p><p>${what}</p><button class="btn full" type="button" data-reveal="1">눌러서 보기</button><p class="small muted">주변에 다른 사람이 없을 때 여세요. 3분 동안 손대지 않거나 다른 앱에 다녀오면 다시 가려집니다.</p></div>`;
+}
+function setReveal(on) { REVEAL = on; lastTouch = Date.now(); if (!(CAM && CAM.session)) render(); }
 
 const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "추적자": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
 const DESC = {
@@ -108,11 +115,13 @@ function render() {
   const info = V.info || {};
   const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "07:30 발표 전" : info.weekday ? "평일" : "주말 휴전"}`;
   $("hday").textContent = head;
-  $("hname").innerHTML = `${esc(V.me ? V.me.name || "" : V.email || "")} · <a href="#" id="lo" class="muted">로그아웃</a>`;
+  const canHide = V.me && V.me.job;
+  $("hname").innerHTML = `${canHide ? `<button type="button" id="hideBtn" class="btn ghost small" style="padding:4px 10px">${REVEAL ? "🔒 가리기" : "👁 보기"}</button> ` : ""}${esc(V.me ? V.me.name || "" : V.email || "")} · <a href="#" id="lo" class="muted">로그아웃</a>`;
   $("lo").onclick = (e) => { e.preventDefault(); logout(); };
+  const hb = $("hideBtn"); if (hb) hb.onclick = () => setReveal(!REVEAL);
   const tabs = [["home", "🏠", "홈"]];
   if (V.me && V.me.job) tabs.push(["act", "✅", "행동"], ["people", "👥", "사람들"], ["cam", "📷", "카메라"]);
-  if (V.canSeePhotos) tabs.push(["photos", "🖼️", "사진"]);
+  if (V.me && V.me.job) tabs.push(["photos", "🖼️", "사진"]);
   if (V.admin) tabs.push(["admin", "🛠️", "관리"]);
   if (!tabs.some((t) => t[0] === TAB)) TAB = "home";
   $("tabs").hidden = tabs.length < 2;
@@ -121,10 +130,15 @@ function render() {
   $("tabsIn").querySelectorAll("button").forEach((b) => (b.onclick = () => { if (TAB === "cam") stopCam(); TAB = b.dataset.tab; render(); window.scrollTo(0, 0); }));
   const m = $("main");
   if (TAB === "home") m.innerHTML = homeHTML();
-  if (TAB === "act") m.innerHTML = actHTML();
-  if (TAB === "people") m.innerHTML = peopleHTML();
-  if (TAB === "cam") m.innerHTML = camHTML();
-  if (TAB === "photos") { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadPhotos(); }
+  const locked = !REVEAL && V.me && V.me.job;
+  if (TAB === "act") m.innerHTML = locked ? lockHTML("내 행동 화면이 가려져 있습니다.") : actHTML();
+  if (TAB === "people") m.innerHTML = locked ? lockHTML("내가 아는 사람과 메모가 가려져 있습니다.") : peopleHTML();
+  if (TAB === "cam") m.innerHTML = locked ? lockHTML("카메라 화면이 가려져 있습니다.") : camHTML();
+  if (TAB === "photos") {
+    if (locked) m.innerHTML = lockHTML("사진 화면이 가려져 있습니다.");
+    else if (!V.canSeePhotos) m.innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">킬 사진은 수사관과 사망자만 볼 수 있습니다.</p></div>`;
+    else { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadPhotos(); }
+  }
   if (TAB === "admin") { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadAdmin(); }
   bind();
 }
@@ -143,10 +157,11 @@ function homeHTML() {
   if (me.group) sub.push(`동료 ${me.group}조`);
   if (me.armor) sub.push("방탄 1회 남음");
   if (me.mayor) sub.push("시장 공개함 · 2표");
-  h += `<div class="rolecard ${cls}"><div class="lbl">내 직업</div><div class="job">${esc(me.job)}</div><div class="lbl">${esc(sub.join(" · "))}</div></div>`;
-  if (me.job === "자유신도") h += `<p class="note c small">원래 직업은 ${esc(me.origJob)}였습니다. 다른 사람에게는 원래 직업으로 보입니다.</p>`;
-  if (!me.alive) h += `<div class="card accent n"><h3>${me.missing ? "실종되었습니다" : "사망했습니다"}</h3><p class="small muted">${me.deathDay ? `${me.deathDay}일차 · ${CAUSE[me.deathCause] || ""}` : ""}${me.missing ? " · 사망자방에 들어갈 수 없고 부활할 수 없습니다." : " · 전체방에서는 말할 수 없습니다. 내 세력이 이기면 함께 승리합니다."}</p>${!me.missing ? (V.deadChatLink ? `<a class="btn ghost" href="${esc(V.deadChatLink)}">사망자방 들어가기</a>${V.deadChatCode ? `<p class="small">참여코드 <b class="mono">${esc(V.deadChatCode)}</b></p>` : ""}` : `<p class="small muted">수사관이 아직 사망자방을 열지 않았습니다. 열리면 알림으로 링크가 옵니다.</p>`) : ""}</div>`;
-  if (me.pending) h += `<div class="card accent c"><div class="between"><h3>🕯️ 교단에 포섭되었습니다</h3><span class="count small" data-deadline="${me.pending.deadline}"></span></div>
+  let priv = "";
+  priv += `<div class="rolecard ${cls}"><div class="lbl">내 직업</div><div class="job">${esc(me.job)}</div><div class="lbl">${esc(sub.join(" · "))}</div></div>`;
+  if (me.job === "자유신도") priv += `<p class="note c small">원래 직업은 ${esc(me.origJob)}였습니다. 다른 사람에게는 원래 직업으로 보입니다.</p>`;
+  if (!me.alive) priv += `<div class="card accent n"><h3>${me.missing ? "실종되었습니다" : "사망했습니다"}</h3><p class="small muted">${me.deathDay ? `${me.deathDay}일차 · ${CAUSE[me.deathCause] || ""}` : ""}${me.missing ? " · 사망자방에 들어갈 수 없고 부활할 수 없습니다." : " · 전체방에서는 말할 수 없습니다. 내 세력이 이기면 함께 승리합니다."}</p>${!me.missing ? (V.deadChatLink ? `<a class="btn ghost" href="${esc(V.deadChatLink)}">사망자방 들어가기</a>${V.deadChatCode ? `<p class="small">참여코드 <b class="mono">${esc(V.deadChatCode)}</b></p>` : ""}` : `<p class="small muted">수사관이 아직 사망자방을 열지 않았습니다. 열리면 알림으로 링크가 옵니다.</p>`) : ""}</div>`;
+  if (me.pending) priv += `<div class="card accent c"><div class="between"><h3>🕯️ 교단에 포섭되었습니다</h3><span class="count small" data-deadline="${me.pending.deadline}"></span></div>
     <button class="opt c" type="button" data-choice="자유"><b>자유신도</b><span class="small">교단 팀이 됩니다. 교단 명단을 받고 교단과 함께 이기지만, 능력을 잃습니다.</span></button>
     <button class="opt t" type="button" data-choice="일반"><b>일반 신도</b><span class="small">시민 팀으로 남고 능력도 지킵니다. 대신 교단 머릿수에 들어갑니다.</span></button>
     <p class="small muted">12:00까지 고르지 않으면 일반 신도가 됩니다. 한 번 고르면 바꿀 수 없습니다.</p></div>`;
@@ -155,13 +170,15 @@ function homeHTML() {
   if (b.jailed) bl.push("🔐 수감: 오늘 능력과 킬 사진을 쓸 수 없습니다.");
   if (b.silenced) bl.push("🤐 오늘 투표할 수 없습니다.");
   if (b.hidden) bl.push("🏚️ 오늘 숨어 있습니다. 투표할 수 없습니다.");
-  if (bl.length && me.alive) h += `<div class="card accent m">${bl.map((x) => `<p class="small">${x}</p>`).join("")}</div>`;
-  if (info.day && me.alive) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div>
+  if (bl.length && me.alive) priv += `<div class="card accent m">${bl.map((x) => `<p class="small">${x}</p>`).join("")}</div>`;
+  if (info.day && me.alive) priv += `<div class="card">
     <div class="between"><span class="small muted">내 투표권</span><b>${me.voteWeight}표</b></div>
     ${V.mission && me.job === "동료" ? `<p class="small"><b>오늘의 조 미션</b> ${esc(V.mission)} <span class="muted">· ${V.groupMissionDone ? "우리 조 인증 완료 (+1표)" : "조원 중 한 명이 카메라 탭에서 인증하면 조 전원 +1표"}</span></p>` : ""}</div>`;
+  if (info.day) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div></div>`;
+  h += REVEAL ? priv : lockHTML("내 직업과 개인 정보가 가려져 있습니다.");
   if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
   if (info.phase === "night") h += `<p class="note small">00:00~07:30에는 행동할 수 없습니다. 어젯밤 결과는 07:30에 발표됩니다.</p>`;
-  h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${(V.events || []).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
+  h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${REVEAL ? "" : `<p class="small muted">🔒 나에게만 온 알림은 가려져 있습니다.</p>`}${(V.events || []).filter((e) => REVEAL || !e.mine).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
   h += qaCardHTML();
   if (cfg.RULEBOOK_URL) h += `<a class="small muted" href="${esc(cfg.RULEBOOK_URL)}" style="text-align:center">규칙서 보기</a>`;
   return h;
@@ -475,6 +492,7 @@ function bindAdmin() {
 // ------------------------------------------------------------------ 이벤트 연결
 function bind() {
   const r = $("reload"); if (r) r.onclick = () => refresh();
+  document.querySelectorAll("[data-reveal]").forEach((b) => (b.onclick = () => setReveal(true)));
   document.querySelectorAll("[data-memo]").forEach((el) => { el.onclick = () => openMemo(el.dataset.memo); el.onkeydown = (e) => { if (e.key === "Enter") openMemo(el.dataset.memo); }; });
   const mo = $("memoOnly"); if (mo) mo.onclick = () => { MEMO_ONLY = !MEMO_ONLY; render(); };
   const ql = $("qaLoad"); if (ql) ql.onclick = qaLoad;
@@ -495,6 +513,9 @@ function bind() {
   if (TAB === "cam" && CAM && CAM.session && !CAM.shot && CAM.stream) { const v = $("c_video"); if (v && !v.srcObject) { v.srcObject = CAM.stream; v.play().catch(() => {}); } }
 }
 
+document.addEventListener("visibilitychange", () => { if (document.hidden && REVEAL) { REVEAL = false; if (V && !(CAM && CAM.session)) render(); } });
+["pointerdown", "keydown", "scroll"].forEach((t) => document.addEventListener(t, () => { lastTouch = Date.now(); }, { passive: true }));
+setInterval(() => { if (REVEAL && V && !(CAM && CAM.session) && Date.now() - lastTouch > HIDE_AFTER_MS) { REVEAL = false; render(); } }, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && V && TAB !== "cam" && TAB !== "admin" && Date.now() - lastLoad > 20000) refresh(); });
 setInterval(() => { if (!document.hidden && V && V.status && TAB !== "cam" && TAB !== "admin" && Date.now() - lastLoad > 60000) refresh(); }, 15000);
 boot();
