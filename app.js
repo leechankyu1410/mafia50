@@ -14,7 +14,11 @@ const HIDE_AFTER_MS = 3 * 60 * 1000;
 function lockHTML(what) {
   return `<div class="card lock" style="text-align:center;align-items:center"><p class="big" aria-hidden="true">🔒</p><p>${what}</p><button class="btn full" type="button" data-reveal="1">눌러서 보기</button><p class="small muted">주변에 다른 사람이 없을 때 여세요. 3분 동안 손대지 않거나 다른 앱에 다녀오면 다시 가려집니다.</p></div>`;
 }
-function setReveal(on) { REVEAL = on; lastTouch = Date.now(); if (!(CAM && CAM.session)) render(); }
+function setReveal(on) {
+  REVEAL = on; lastTouch = Date.now();
+  if (on && V && V.me && V.me.job && !V.roleSeen) { V.roleSeen = true; api("seen_role").catch(() => { V.roleSeen = false; }); }
+  if (!(CAM && CAM.session)) render();
+}
 
 const DEFAULT_COMPOSITION = { "보스": 1, "암살자": 1, "추적자": 1, "마담": 1, "스파이": 1, "조작범": 1, "청부업자": 1, "교주": 1, "광신도": 1, "경찰": 3, "수사관": 1, "기자": 1, "목격자": 1, "점쟁이": 1, "관찰자": 1, "의사": 2, "경호원": 1, "군인": 1, "은둔자": 1, "사제": 2, "영매": 1, "이단심판관": 2, "교도관": 1, "선도부장": 1, "사냥꾼": 1, "시장": 1, "변호사": 1, "우체부": 1, "연인": 2, "동료": 15 };
 const DESC = {
@@ -454,7 +458,8 @@ function adminHTML() {
     <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${G.clockOffsetMin || 0}"></div>
     <div class="row"><button class="btn ghost" type="button" data-off="60">+1시간</button><button class="btn ghost" type="button" data-off="1440">+1일</button><button class="btn ghost" type="button" data-off="reset">0으로</button></div>
     <button class="btn full" type="button" id="a_save">설정 저장</button></div>`;
-  h += `<div class="card"><h3>참가자 (공개 정보만)</h3><p class="small muted">사고가 났을 때만 쓰세요. 부활·제외는 전체에 공지됩니다.</p>${P.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="chips">${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</span></div>`).join("")}</div>`;
+  const seenN = P.filter((p) => p.seen).length;
+  h += `<div class="card"><div class="between"><h3>참가자 (공개 정보만)</h3><span class="small ${seenN < P.length ? "warn" : "ok"}">직업 확인 ${seenN} / ${P.length}</span></div><p class="small muted">"미확인"은 아직 앱에서 '눌러서 보기'를 한 번도 누르지 않은 사람입니다. 부활·제외는 사고가 났을 때만 쓰세요. 전체에 공지됩니다.</p>${P.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="chips">${p.seen ? "" : `<span class="pill m">미확인</span>`}${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</span></div>`).join("")}</div>`;
   h += `<div class="card"><h3>공개 알림 기록</h3><div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)}</div>${esc(e.text)}</div>`).join("")}</div></div>`;
   h += startForm;
   h += `<div class="card accent m"><h3>초기화</h3><p class="small muted">게임 상태와 모든 기록을 지웁니다. 확인란에 "초기화"를 적으세요.</p><input type="text" id="a_rst"><button class="btn danger full" type="button" id="a_rstb">초기화</button></div>`;
