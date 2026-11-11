@@ -244,7 +244,7 @@ function actHTML() {
   if (V.status !== "running") return `<div class="card"><p class="muted">게임이 진행 중이 아닙니다.</p></div>`;
   if (info.phase !== "open") return `<div class="card"><p class="muted">${info.phase === "night" ? "07:30부터 행동할 수 있습니다." : "아직 게임이 시작되지 않았습니다."}</p></div>`;
   if (!me.alive) {
-    return V.canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었다면 이의를 낼 수 있습니다. 수사관이 사진을 보고 판정합니다. 한 번만 낼 수 있습니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
+    return V.canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었거나 얼굴을 알아볼 수 없는 사진이면 이의를 낼 수 있습니다. 수사관이 사진을 보고 판정합니다. 한 번만 낼 수 있습니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
   }
   let h = "";
   const vt = (V.today || {}).vote;
@@ -467,42 +467,63 @@ async function loadAdmin() {
   }
   catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
 }
+// 관리 화면 접기 상태 (다시 그려도 유지)
+const ADMIN_OPEN = {};
+(function () { const st = document.createElement("style"); st.textContent = "details.fold>summary::-webkit-details-marker{display:none}details.fold>summary{list-style:none}"; document.head.appendChild(st); })();
+function fold(key, title, right, inner, defOpen, accent) {
+  const open = key in ADMIN_OPEN ? ADMIN_OPEN[key] : defOpen;
+  return `<details class="card fold${accent ? " accent m" : ""}" data-fold="${key}"${open ? " open" : ""}><summary class="between" style="cursor:pointer;list-style:none"><h3>${title}</h3><span class="small">${right || ""} <span class="muted" aria-hidden="true">${open ? "▲" : "▼"}</span></span></summary><div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">${inner}</div></details>`;
+}
 function adminHTML() {
   const G = ADMIN.game;
-  const startForm = `<div class="card"><h3>게임 만들기</h3>
-    <p class="small muted">직업은 무작위로 배정되고, 관리자도 볼 수 없습니다.</p>
+  const startInner = `<p class="small muted">직업은 무작위로 배정되고, 관리자도 볼 수 없습니다.</p>
     <div class="field"><label>시작일 (어느 요일이든 가능, 평일 추천)</label><input type="date" id="a_start" value="${nextMonday()}"></div>
     <details><summary class="small">직업 구성 바꾸기 (합이 참가자 수와 같아야 함)</summary><textarea id="a_comp" style="min-height:140px;font-family:var(--font-mono);font-size:.8rem">${esc(JSON.stringify(DEFAULT_COMPOSITION, null, 1))}</textarea></details>
-    <button class="btn full" type="button" id="a_go">${G ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기"}</button></div>`;
-  if (!G) return startForm;
+    <button class="btn full" type="button" id="a_go">${G ? "새 게임으로 다시 만들기 (기존 기록 삭제)" : "게임 만들기"}</button>`;
+  if (!G) return `<div class="card"><h3>게임 만들기</h3>${startInner}</div>`;
   const info = ADMIN.info, P = ADMIN.players || [];
-  const qn = ((ADMIN.qa && ADMIN.qa.pending) || []).length, mn = (ADMIN.missions || []).filter((m) => !m.reviewed).length;
-  let h = qn + mn ? `<div class="card accent m"><h3>처리할 일 ${qn + mn}개</h3><p class="small">${qn ? `답변 대기 질문 ${qn}개` : ""}${qn && mn ? " · " : ""}${mn ? `확인 대기 미션 ${mn}개` : ""}</p></div>` : `<p class="small muted">처리할 일이 없습니다.</p>`;
-  h += `<div class="card"><div class="between"><h3>진행 상태</h3><span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span></div>
-    <p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 전" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
-    <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
-    <div class="row"><button class="btn ghost" type="button" id="a_pause">${G.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div></div>`;
-  const ms = [...(ADMIN.missions || [])].sort((a, b) => (a.reviewed === b.reviewed ? b.id - a.id : a.reviewed ? 1 : -1));
-  const msTodo = ms.filter((m) => !m.reviewed).length;
-  h += `<div class="card${msTodo ? " accent m" : ""}"><div class="between"><h3>미션 인증 확인</h3><span class="small ${msTodo ? "warn" : "muted"}">확인 대기 ${msTodo}</span></div><p class="small muted">누가 올렸는지는 보이지 않습니다. 맞으면 <b>확인</b>, 미션과 맞지 않으면 <b>반려</b>를 누르세요. 반려하면 그 조의 +1표가 취소됩니다.</p>
-    ${ms.length ? ms.map((m) => `<div class="card"><div class="between"><span class="small">${m.day}일차 · ${esc(m.mission)}${m.rejected ? " · <b>반려됨</b>" : m.reviewed ? " · 확인함" : ""}</span>${m.reviewed ? "" : `<span class="row"><button class="btn small" type="button" data-approve="${m.id}">확인</button><button class="btn ghost small" type="button" data-reject="${m.id}">반려</button></span>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("") : `<p class="small muted">최근 이틀 동안 올라온 미션 사진이 없습니다.</p>`}</div>`;
   const qp = (ADMIN.qa && ADMIN.qa.pending) || [];
-  h += `<div class="card${qp.length ? " accent m" : ""}"><div class="between"><h3>익명 질문</h3><span class="small ${qp.length ? "warn" : "muted"}">답변 대기 ${qp.length}</span></div>
-    <p class="small muted">질문자 이름은 저장되지 않습니다. 답하면 질문과 답이 전체 알림으로 공개됩니다. 게임 정보를 흘리려는 질문이나 장난은 지우세요.</p>
-    ${qp.length ? qp.map((q) => `<div class="card"><p class="small muted">${shortTime(q.created_at)}</p><p>${esc(q.text)}</p><textarea id="qa_a_${q.id}" placeholder="답변"></textarea><div class="row"><button class="btn" style="flex:1" type="button" data-qa-answer="${q.id}">답하고 공개</button><button class="btn ghost" type="button" data-qa-del="${q.id}">지우기</button></div></div>`).join("") : `<p class="small muted">대기 중인 질문이 없습니다.</p>`}</div>`;
-  h += `<div class="card"><h3>전체 공지</h3><textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button></div>`;
-  h += `<div class="card"><h3>설정</h3>
-    <div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${G.clockOffsetMin || 0}"></div>
-    <div class="row"><button class="btn ghost" type="button" data-off="60">+1시간</button><button class="btn ghost" type="button" data-off="1440">+1일</button><button class="btn ghost" type="button" data-off="reset">0으로</button></div>
-    <button class="btn full" type="button" id="a_save">설정 저장</button></div>`;
+  const ms = ADMIN.missions || [];
+  const qn = qp.length, mn = ms.filter((m) => !m.reviewed).length;
+  let h = qn + mn ? `<div class="card accent m"><h3>처리할 일 ${qn + mn}개</h3><p class="small">${qn ? `답변 대기 질문 ${qn}개` : ""}${qn && mn ? " · " : ""}${mn ? `확인 대기 미션 ${mn}개` : ""}</p></div>` : `<p class="small muted">처리할 일이 없습니다.</p>`;
+  h += fold("status", "진행 상태", `<span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span>`,
+    `<p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 후 대기 (07:30부터 행동)" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
+    <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
+    <div class="row"><button class="btn ghost" type="button" id="a_pause">${G.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div>`, true);
+  // 미션: 날짜별로 한 번 더 접기
+  const days = [...new Set(ms.map((m) => m.day))].sort((a, b) => b - a);
+  const dayHTML = days.map((d) => {
+    const list = ms.filter((m) => m.day === d).sort((a, b) => (a.reviewed === b.reviewed ? a.id - b.id : a.reviewed ? 1 : -1));
+    const todo = list.filter((m) => !m.reviewed).length;
+    const key = "m" + d;
+    const open = key in ADMIN_OPEN ? ADMIN_OPEN[key] : todo > 0;
+    return `<details class="fold" data-fold="${key}"${open ? " open" : ""} style="border:1px solid var(--line);border-radius:12px;padding:8px 10px"><summary class="between" style="cursor:pointer;list-style:none"><b>${d}일차</b><span class="small ${todo ? "warn" : "muted"}">${list.length}장${todo ? ` · 확인 대기 ${todo}` : " · 모두 처리"} <span aria-hidden="true">${open ? "▲" : "▼"}</span></span></summary>
+      <p class="small muted" style="margin:6px 0">${esc(list[0] ? list[0].mission : "")}</p>
+      ${list.map((m) => `<div class="card" style="margin-top:8px"><div class="between"><span class="small">${m.rejected ? "<b>반려됨</b>" : m.reviewed ? "확인함" : "확인 대기"}</span>${m.reviewed ? "" : `<span class="row"><button class="btn small" type="button" data-approve="${m.id}">확인</button><button class="btn ghost small" type="button" data-reject="${m.id}">반려</button></span>`}</div><img class="ph" loading="lazy" alt="미션 사진" src="${esc(m.url)}"></div>`).join("")}</details>`;
+  }).join("");
+  h += fold("missions", "미션 인증 확인", `<span class="${mn ? "warn" : "muted"}">확인 대기 ${mn}</span>`,
+    `<p class="small muted">누가 올렸는지는 보이지 않습니다. 맞으면 <b>확인</b>, 미션과 맞지 않으면 <b>반려</b>를 누르세요. 반려하면 그 조의 +1표가 취소됩니다.</p>${dayHTML || `<p class="small muted">아직 올라온 미션 사진이 없습니다.</p>`}`, mn > 0, mn > 0);
+  h += fold("qa", "익명 질문", `<span class="${qn ? "warn" : "muted"}">답변 대기 ${qn}</span>`,
+    `<p class="small muted">질문자 이름은 저장되지 않습니다. 답하면 질문과 답이 전체 알림으로 공개됩니다. 게임 정보를 흘리려는 질문이나 장난은 지우세요.</p>
+    ${qp.length ? qp.map((q) => `<div class="card"><p class="small muted">${shortTime(q.created_at)}</p><p>${esc(q.text)}</p><textarea id="qa_a_${q.id}" placeholder="답변"></textarea><div class="row"><button class="btn" style="flex:1" type="button" data-qa-answer="${q.id}">답하고 공개</button><button class="btn ghost" type="button" data-qa-del="${q.id}">지우기</button></div></div>`).join("") : `<p class="small muted">대기 중인 질문이 없습니다.</p>`}`, qn > 0, qn > 0);
+  h += fold("announce", "전체 공지", "", `<textarea id="a_ann"></textarea><button class="btn full" type="button" id="a_annb">공지 보내기</button>`, false);
   const seenN = P.filter((p) => p.seen).length;
-  h += `<div class="card"><div class="between"><h3>참가자 (공개 정보만)</h3><span class="small ${seenN < P.length ? "warn" : "ok"}">직업 확인 ${seenN} / ${P.length}</span></div><p class="small muted">"미확인"은 아직 앱에서 '눌러서 보기'를 한 번도 누르지 않은 사람입니다. 부활·제외는 사고가 났을 때만 쓰세요. 전체에 공지됩니다.</p>${P.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="chips">${p.seen ? "" : `<span class="pill m">미확인</span>`}${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</span></div>`).join("")}</div>`;
-  h += `<div class="card"><h3>공개 알림 기록</h3><div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)}</div>${esc(e.text)}</div>`).join("")}</div></div>`;
-  h += startForm;
-  h += `<div class="card accent m"><h3>초기화</h3><p class="small muted">게임 상태와 모든 기록을 지웁니다. 확인란에 "초기화"를 적으세요.</p><input type="text" id="a_rst"><button class="btn danger full" type="button" id="a_rstb">초기화</button></div>`;
+  h += fold("players", "참가자 (공개 정보만)", `<span class="${seenN < P.length ? "warn" : "ok"}">직업 확인 ${seenN} / ${P.length}</span>`,
+    `<p class="small muted">"미확인"은 아직 앱에서 '눌러서 보기'를 한 번도 누르지 않은 사람입니다. 부활·제외는 사고가 났을 때만 쓰세요. 전체에 공지됩니다.</p><div>${P.map((p) => `<div class="person${p.alive ? "" : " dead"}"><span class="nm">${esc(p.name)}</span><span class="chips">${p.seen ? "" : `<span class="pill m">미확인</span>`}${p.badges.map((b) => `<span class="pill t">${esc(b)}</span>`).join("")}${p.alive ? `<button class="btn ghost small" type="button" data-kill="${p.sid}">제외</button>` : `<button class="btn ghost small" type="button" data-revive="${p.sid}">부활</button>`}</span></div>`).join("")}</div>`, false);
+  h += fold("events", "공개 알림 기록", `<span class="muted">${(ADMIN.events || []).length}개</span>`, `<div class="feed">${(ADMIN.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.visible_at)}</div>${esc(e.text)}</div>`).join("")}</div>`, false);
+  h += fold("settings", "설정", "", `<div class="field"><label>테스트용 시계 이동 (분, 실제 게임에서는 0)</label><input type="number" id="a_off" value="${G.clockOffsetMin || 0}"></div>
+    <div class="row"><button class="btn ghost" type="button" data-off="60">+1시간</button><button class="btn ghost" type="button" data-off="1440">+1일</button><button class="btn ghost" type="button" data-off="reset">0으로</button></div>
+    <button class="btn full" type="button" id="a_save">설정 저장</button>`, false);
+  h += fold("start", "게임 다시 만들기", "", startInner, false);
+  h += fold("reset", "초기화", "", `<p class="small muted">게임 상태와 모든 기록을 지웁니다. 확인란에 "초기화"를 적으세요.</p><input type="text" id="a_rst"><button class="btn danger full" type="button" id="a_rstb">초기화</button>`, false, true);
   return h;
 }
 function bindAdmin() {
+  document.querySelectorAll("details[data-fold]").forEach((d) => d.addEventListener("toggle", (e) => {
+    if (e.target !== d) return;
+    ADMIN_OPEN[d.dataset.fold] = d.open;
+    const arrow = d.querySelector(":scope > summary [aria-hidden]"); if (arrow) arrow.textContent = d.open ? "▲" : "▼";
+  }));
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
   const run = async (op, data, msg) => { try { await api(op, data); toast(msg || "완료"); await refresh(); } catch (e) { toast(e.message); } };
   on("a_go", async () => {
