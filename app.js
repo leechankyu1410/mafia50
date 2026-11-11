@@ -123,7 +123,7 @@ async function refresh(first, email) {
 // ------------------------------------------------------------------ 화면 틀
 function render() {
   const info = V.info || {};
-  const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "07:30 발표 전" : info.weekday ? "평일" : "주말 휴전"}`;
+  const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "행동은 07:30부터" : info.weekday ? "평일" : "주말 휴전"}`;
   $("hday").textContent = head;
   const canHide = V.me && V.me.job;
   $("hname").innerHTML = `${canHide ? `<button type="button" id="hideBtn" class="btn ghost small" style="padding:4px 10px">${REVEAL ? "🔒 가리기" : "👁 보기"}</button> ` : ""}${esc(V.me ? V.me.name || "" : V.email || "")} · <a href="#" id="lo" class="muted">로그아웃</a>`;
@@ -189,7 +189,7 @@ function homeHTML() {
   if (info.day) h += `<div class="card"><div class="between"><span class="small muted">오늘의 코드</span><span class="mono big">${esc(V.code || "")}</span></div></div>`;
   h += REVEAL || V.status === "ended" ? priv : lockHTML("내 직업과 개인 정보가 가려져 있습니다.");
   if (info.phase === "before") h += `<p class="note small">게임은 ${esc(V.info.date || "")} 07:30부터 시작합니다.</p>`;
-  if (info.phase === "night") h += `<p class="note small">결과는 자정에 발표됩니다. 00:00~07:30에는 행동할 수 없고, 07:30부터 다시 행동과 투표가 열립니다.</p>`;
+  if (info.phase === "night") h += `<p class="note small">결과는 자정에 발표됩니다. 00:00~07:30에는 행동할 수 없고, 07:30부터 다시 행동과 투표가 열립니다. 이의 제기와 수사관 판정은 발표 직후부터 바로 할 수 있습니다.</p>`;
   h += `<div class="card"><div class="between"><h3>알림</h3><button class="btn ghost small" type="button" id="reload">새로고침</button></div><div class="feed">${REVEAL || V.status === "ended" ? "" : `<p class="small muted">🔒 나에게만 온 알림은 가려져 있습니다.</p>`}${(V.events || []).filter((e) => REVEAL || V.status === "ended" || !e.mine).map((e) => `<div class="ev${e.mine ? " mine" : ""}"><div class="meta">${shortTime(e.at)}${e.mine ? " · 나에게만" : ""}</div>${esc(e.text)}</div>`).join("") || `<p class="muted small">아직 알림이 없습니다.</p>`}</div></div>`;
   const vh = V.voteHistory || [];
   if (vh.length) h += `<details class="card"><summary><b>지난 투표 결과</b> <span class="small muted">${vh.length}일치</span></summary>${vh.map((d) => `<div class="ev"><div class="meta">${d.day}일차${d.executed.length ? " · 처형 " + d.executed.map(esc).join(", ") : " · 처형 없음"}</div>${d.tally.length ? d.tally.map(([n, c]) => `${esc(n)} ${c}표`).join(" · ") : "투표 없음"}</div>`).join("")}<p class="small muted">누가 투표했는지는 게임이 끝나면 공개됩니다.</p></details>`;
@@ -242,10 +242,10 @@ function abilityForm(a) {
 function actHTML() {
   const me = V.me, info = V.info;
   if (V.status !== "running") return `<div class="card"><p class="muted">게임이 진행 중이 아닙니다.</p></div>`;
-  if (info.phase !== "open") return `<div class="card"><p class="muted">${info.phase === "night" ? "07:30부터 행동할 수 있습니다." : "아직 게임이 시작되지 않았습니다."}</p></div>`;
-  if (!me.alive) {
+  if (!me.alive && (info.phase === "open" || info.phase === "night")) {
     return V.canDispute ? `<div class="card"><h3>이의 제기</h3><p class="small muted">찍힐 때 자고 있었거나 얼굴을 알아볼 수 없는 사진이면 이의를 낼 수 있습니다. 수사관이 사진을 보고 판정합니다. 한 번만 낼 수 있습니다.</p><textarea id="f_dispute" maxlength="200" placeholder="상황을 적어 주세요"></textarea><button class="btn full" type="button" data-sub="dispute">이의 제기 보내기</button>${(V.today || {}).dispute ? `<p class="ok">이의를 보냈습니다.</p>` : ""}</div>` : `<div class="card"><p class="muted">사망한 사람은 행동할 수 없습니다.</p></div>`;
   }
+  if (info.phase !== "open") return `<div class="card"><p class="muted">${info.phase === "night" ? "07:30부터 행동할 수 있습니다. (수사관 판정은 사진 탭에서 지금도 가능)" : "아직 게임이 시작되지 않았습니다."}</p></div>`;
   let h = "";
   const vt = (V.today || {}).vote;
   h += `<div class="card"><div class="between"><h3>투표</h3><span class="small muted">23:59 마감 · 내 표 ${me.voteWeight}</span></div>
@@ -420,7 +420,7 @@ async function loadPhotos() {
     $("main").innerHTML = `<div class="card"><h3>킬 사진</h3><p class="small muted">누가 찍었는지는 나오지 않습니다.</p>${CRITERIA_HTML}</div>` +
       (r.photos.length ? r.photos.map((p) => {
         const dead = !(V.everyone.find((x) => x.sid === p.sid) || {}).alive;
-        const can = V.me.job === "수사관" && V.me.alive && V.info.phase === "open" && p.day === V.lastKillDay && dead;
+        const can = V.me.job === "수사관" && V.me.alive && (V.info.phase === "open" || V.info.phase === "night") && p.day === V.lastKillDay && dead;
         return `<div class="card"><div class="between"><b>${esc(p.target)}</b><span class="small muted">${p.day}일차${dead ? "" : " · 판정으로 부활"}</span></div><img class="ph" loading="lazy" alt="${esc(p.target)} 킬 사진" src="${esc(p.url)}">${can ? `<button class="btn ghost full" type="button" data-inspect="${esc(p.sid)}">이 킬을 무효로 판정</button>` : ""}</div>`;
       }).join("") : `<div class="card"><p class="muted small">아직 사진이 없습니다.</p></div>`);
     document.querySelectorAll("[data-inspect]").forEach((b) => (b.onclick = async () => {
