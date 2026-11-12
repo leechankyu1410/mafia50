@@ -31,9 +31,9 @@ const DESC = {
   contract: "시민 3명의 직업을 적습니다. 모두 맞으면 3명이 죽습니다. 동료는 적을 수 없습니다.",
   reporter: "1명의 직업을 내일 아침 전체에 공개합니다.",
   medium: "마피아 킬로 죽은 사람 1명을 되살립니다. 교주와 실종자는 안 됩니다.",
-  assassin: "오늘 팀이 이 사람을 찍으면 모든 보호를 무시하고 죽입니다.",
+  assassin: "오늘 팀이 이 사람을 찍으면 모든 보호를 무시하고 죽입니다. 단, 그 사진이 오늘 팀의 처음 두 킬 안에 들어야 합니다.",
   tracker: "1명을 골라, 그 사람이 오늘 능력이나 킬 사진을 쓴 대상을 알아냅니다.",
-  doctor: "내일 이 사람을 마피아 킬에서 1번 지킵니다. 같은 사람 연속 불가.",
+  doctor: "내일 하루 동안 이 사람을 마피아 킬에서 지킵니다. 여러 번 찍혀도 모두 막지만 암살은 못 막습니다. 같은 사람 연속 불가.",
   guard: "내일 이 사람이 공격받으면 내가 대신 죽습니다.",
   madam: "내일 이 사람의 능력을 봉인합니다. 같은 사람 연속 불가.",
   jailer: "내일 이 사람의 능력과 킬 사진을 막습니다.",
@@ -134,6 +134,7 @@ function render() {
   if (V.me && V.me.job) tabs.push(["photos", "🖼️", "사진"]);
   if (V.status === "ended") tabs.push(["history", "📜", "기록"]);
   if (V.admin) tabs.push(["admin", "🛠️", "관리"]);
+  if (V.god) tabs.push(["god", "🔮", "전지"]);
   if (!tabs.some((t) => t[0] === TAB)) TAB = "home";
   $("tabs").hidden = tabs.length < 2;
   const todo = V.adminTodo ? V.adminTodo.questions + V.adminTodo.missions : 0;
@@ -152,6 +153,7 @@ function render() {
   }
   if (TAB === "history") { m.innerHTML = `<div class="card"><p class="muted">기록을 불러오는 중…</p></div>`; loadHistory(); }
   if (TAB === "admin") { m.innerHTML = `<div class="card"><p class="muted">불러오는 중…</p></div>`; loadAdmin(); }
+  if (TAB === "god") { m.innerHTML = `<div class="card"><p class="muted">전체 기록을 불러오는 중…</p></div>`; loadGod(); }
   bind();
 }
 
@@ -254,7 +256,7 @@ function actHTML() {
     ${vt ? `<p class="ok">투표함: ${vt.target ? esc(nameOf(vt.target)) : "스킵"}</p>` : ""}
     <button class="btn full" type="button" data-sub="vote"${me.blocked.silenced || me.blocked.hidden ? " disabled" : ""}>투표하기</button></div>`;
   if (V.canKill) {
-    h += `<div class="card accent m"><div class="between"><h3>오늘 마피아 킬</h3><span class="small muted mono">${V.teamKillsToday || 0}번 시도</span></div><p class="small muted">킬은 카메라 탭에서 찍습니다. 기본 2번이고, 접선 시도는 2번까지 횟수에서 빠집니다.</p>
+    h += `<div class="card accent m"><div class="between"><h3>오늘 마피아 킬</h3><span class="small muted mono">${V.teamKillsToday || 0}번 시도</span></div><p class="small muted">킬은 카메라 탭에서 찍습니다. 진짜 킬은 팀 전체에서 <b>먼저 찍은 2장</b>만 처리됩니다(3·4번째 사진은 접선 대상일 때만 의미가 있음). 암살 대상은 먼저 찍으세요.</p>
       ${(V.teamKills || []).map((k) => `<p class="small">${shortTime(k.at)} · ${esc(k.by)} → ${esc(k.target)}</p>`).join("")}</div>`;
   }
   const abil = (V.abilities || []).filter((a) => (a.kind !== "mayor" || !me.mayor) && a.kind !== "inspect");
@@ -340,8 +342,9 @@ function camHTML() {
   const targets = pur === "kill" ? aliveOthers().filter((x) => !(known.has(x.sid) && V.people.find((p) => p.sid === x.sid).label !== "연인")) : aliveOthers();
   let h = `<div class="card"><div class="field"><label>무엇을 찍나요</label><select id="c_purpose">${purposes.map(([k, l]) => `<option value="${k}"${k === pur ? " selected" : ""}>${l}</option>`).join("")}</select></div>`;
   if (pur !== "mission") h += `<div class="field"><label>${pur === "kill" ? "대상" : "나를 찍은 사람"}</label><select id="c_target"><option value="">고르세요</option>${opt(targets, CAM && CAM.target)}</select></div>`;
+  if (pur === "kill" && (V.teamKillsToday || 0) >= 2) h += `<p class="small warn">⚠️ 오늘 팀이 이미 킬 사진 ${V.teamKillsToday}장을 보냈습니다. 진짜 킬은 팀 전체에서 <b>먼저 찍은 2장만</b> 처리됩니다. 지금 찍는 사진은 대상이 접선 대기 마피아일 때만 '접선'으로 처리되고, 아니면 무효입니다.</p>`;
   h += `<p class="small muted">${pur === "kill" ? "얼굴을 알아볼 수 있게, 깨어 있는 사람만 찍으세요. 화장실·탈의실·샤워실과 옷 갈아입는 사람은 절대 찍지 않습니다(실격)." : pur === "counter" ? "찍힌 뒤 2분 안에 그 사람 얼굴을 찍으세요. 반격은 하루 1번입니다." : V.mission ? "오늘의 조 미션: " + esc(V.mission) + " · 조원 중 한 명만 올리면 됩니다." : ""}</p>`;
-  if (!CAM || !CAM.session) h += `<button class="btn full" type="button" id="c_start">카메라 열기</button><p class="small muted">카메라를 연 뒤 60초 안에 찍고 보내야 합니다. 갤러리 사진은 쓸 수 없습니다.</p>`;
+  if (!CAM || !CAM.session) h += `<button class="btn full" type="button" id="c_start">카메라 열기</button><p class="small muted">카메라를 연 뒤 60초 안에 찍고 보내야 합니다. 갤러리 사진은 쓸 수 없습니다. 기록되는 시각은 <b>보내기를 누른 시각</b>이고, 23:59:59까지 보내야 그날 사진으로 인정됩니다.</p>`;
   else if (!CAM.shot) h += `<div class="camwrap"><video id="c_video" playsinline autoplay muted></video><div class="stamp" id="c_stamp"></div></div><div class="row"><button class="btn" style="flex:1" type="button" id="c_shoot">촬영</button><button class="btn ghost" type="button" id="c_flip">전환</button><span class="count" id="c_count"></span></div>`;
   else h += `<img class="ph" id="c_prev" alt="촬영한 사진" src="${CAM.shot}"><div class="row"><button class="btn" style="flex:1" type="button" id="c_send">보내기</button><button class="btn ghost" type="button" id="c_retake">다시 찍기</button><span class="count" id="c_count"></span></div>`;
   h += `</div>`;
@@ -485,7 +488,8 @@ function adminHTML() {
   const qp = (ADMIN.qa && ADMIN.qa.pending) || [];
   const ms = ADMIN.missions || [];
   const qn = qp.length, mn = ms.filter((m) => !m.reviewed).length;
-  let h = qn + mn ? `<div class="card accent m"><h3>처리할 일 ${qn + mn}개</h3><p class="small">${qn ? `답변 대기 질문 ${qn}개` : ""}${qn && mn ? " · " : ""}${mn ? `확인 대기 미션 ${mn}개` : ""}</p></div>` : `<p class="small muted">처리할 일이 없습니다.</p>`;
+  let h = V.canRetire ? `<div class="card accent c"><h3>전업 관리자로 전환</h3><p class="small">죽은 관리자는 전업 관리자로 바꾸면 <b>모든 직업과 행동 기록을 보는 🔮 전지 탭</b>이 열립니다. 대신 다시는 게임에 참여할 수 없고(영매·수사관 부활 불가) 전체에 공지됩니다. 사망자방에서도 나가세요.</p><button class="btn full" type="button" id="a_retire">전업 관리자로 전환</button></div>` : "";
+  h += qn + mn ? `<div class="card accent m"><h3>처리할 일 ${qn + mn}개</h3><p class="small">${qn ? `답변 대기 질문 ${qn}개` : ""}${qn && mn ? " · " : ""}${mn ? `확인 대기 미션 ${mn}개` : ""}</p></div>` : `<p class="small muted">처리할 일이 없습니다.</p>`;
   h += fold("status", "진행 상태", `<span class="pill ${G.status === "running" ? "t" : "n"}">${G.status === "running" ? "진행 중" : G.status === "paused" ? "일시 정지" : G.status === "ended" ? "종료" : G.status}</span>`,
     `<p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 후 대기 (07:30부터 행동)" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
     <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
@@ -532,6 +536,7 @@ function bindAdmin() {
     run("admin_start", { startDate: $("a_start").value, composition: comp, force: true }, "게임을 만들었습니다.");
   });
   on("a_reload", () => loadAdmin());
+  on("a_retire", async () => { if (await confirmBox("전업 관리자로 전환할까요? 되돌릴 수 없고, 다시는 게임에 참여할 수 없습니다. 전체에 공지됩니다.", "전환")) run("admin_retire", {}, "전업 관리자가 되었습니다. 🔮 전지 탭을 여세요."); });
   on("a_pause", () => run("admin_set", { status: ADMIN.game.status === "paused" ? "running" : "paused" }));
   on("a_save", () => run("admin_set", { clockOffsetMin: Number($("a_off").value) || 0 }, "저장했습니다."));
   document.querySelectorAll("[data-off]").forEach((b) => (b.onclick = () => { const o = $("a_off"); o.value = b.dataset.off === "reset" ? 0 : (Number(o.value) || 0) + Number(b.dataset.off); }));
@@ -550,6 +555,98 @@ function bindAdmin() {
   }));
   document.querySelectorAll("[data-reject]").forEach((b) => (b.onclick = async () => { try { await api("admin_reject_photo", { id: Number(b.dataset.reject) }); toast("반려했습니다."); await refresh(); } catch (e) { toast(e.message); } }));
   document.querySelectorAll("[data-approve]").forEach((b) => (b.onclick = async () => { try { await api("admin_approve_photo", { id: Number(b.dataset.approve) }); toast("확인했습니다."); await refresh(); } catch (e) { toast(e.message); } }));
+}
+
+// ------------------------------------------------------------------ 전지 (전업 관리자)
+let GOD = null, GOD_Q = "";
+const JOB_LIST = () => [...new Set([...Object.keys(DEFAULT_COMPOSITION), "자유신도", "시민"])].sort(ko);
+const RES_CLS = (r) => (!r ? "n" : r.startsWith("사망") ? "m" : r.startsWith("접선") ? "c" : "n");
+async function loadGod() {
+  try { GOD = await api("admin_god"); $("main").innerHTML = godHTML(); bindGod(); }
+  catch (e) { $("main").innerHTML = `<div class="card"><p class="warn">${esc(e.message)}</p></div>`; }
+}
+function godHTML() {
+  const G = GOD, P = G.players, tc = (t) => (t === "mafia" ? "m" : t === "cult" ? "c" : "t");
+  const cnt = (t) => P.filter((p) => p.alive && p.team === t).length;
+  let h = `<div class="card"><div class="between"><h3>🔮 전지 모드</h3><button class="btn ghost small" type="button" id="g_reload">새로고침</button></div>
+    <p class="small">${G.info.day}일차 · ${G.info.phase === "night" ? "발표 후 대기" : G.info.phase === "open" ? "진행" : G.info.phase} · 앱 시각 ${kst(G.now)}</p>
+    <p class="small">생존: <span class="pill t">시민 ${cnt("town")}</span> <span class="pill m">마피아 ${cnt("mafia")}</span> <span class="pill c">교단 ${cnt("cult")}</span> · 교단 ${G.cult.collapsed ? "해체됨" : G.cult.heirUsed ? "후계 승계 사용함" : "정상"}</p>
+    <p class="small muted">이 화면은 절대 다른 사람에게 보여 주지 마세요. 수정 기능은 사고 처리용이며, 공지 문구를 비우면 조용히 바뀝니다.</p></div>`;
+  // 참가자
+  h += fold("g_players", "참가자 전체", `<span class="muted">${P.length}명</span>`, `<div class="tw"><table><tr><th>이름</th><th>직업·상태</th><th></th></tr>${P.map((p) => {
+    const flags = [p.group ? `${p.group}조` : "", p.team === "mafia" ? (p.connected ? "접선" : "미접선") : "", p.disciple ? `${p.disciple}신도` : "", p.pending ? "포섭 선택 대기" : "", p.mayor ? "시장 공개" : "", p.armor ? "방탄" : "", p.lover ? `연인 ${p.lover}` : "", p.witnessOf ? `아는 마피아 ${p.witnessOf}` : "", p.heir ? `후계 ${p.heir}` : "", p.hunterTarget ? `사냥 ${p.hunterTarget}` : "", p.publicJob ? `기자공개 ${p.publicJob}` : "", Object.keys(p.uses || {}).length ? "사용 " + Object.entries(p.uses).map(([k, n]) => `${k}${n}`).join(",") : "", p.retired ? "전업 관리자" : ""].filter(Boolean);
+    return `<tr${p.alive ? "" : ' style="opacity:.55"'}><td><b>${esc(p.name)}</b><br><span class="small muted">${esc(p.sid)}</span></td><td><span class="pill ${tc(p.team)}">${esc(p.origJob)}${p.job !== p.origJob ? " → " + esc(p.job) : ""}</span> ${p.alive ? "" : `<span class="small">${p.deathDay}일차 ${esc(CAUSE[p.deathCause] || p.deathCause || "")}${p.missing ? " · 실종" : ""}</span>`}<br><span class="small muted">${flags.map(esc).join(" · ")}</span></td><td><button class="btn ghost small" type="button" data-gview="${esc(p.sid)}">화면</button> <button class="btn ghost small" type="button" data-gedit="${esc(p.sid)}">수정</button></td></tr>`; }).join("")}</table></div>`, false);
+  // 날짜별
+  for (const d of G.days) {
+    const key = "g_d" + d.day;
+    const kills = d.photos.filter((x) => x.kind === "kill"), ctr = d.photos.filter((x) => x.kind === "counter");
+    let inner = "";
+    if (!d.resolved) inner += `<p class="small warn">아직 자정 처리 전입니다. 아래는 지금까지 제출된 내용입니다.</p>`;
+    if (d.died.length) inner += `<p class="small"><b>사망</b> ${d.died.map((x) => `${esc(x.name)}${x.cause ? ` (${esc(CAUSE[x.cause] || x.cause)})` : ""}`).join(", ")}</p>`;
+    if (d.tally.length) inner += `<p class="small"><b>득표</b> ${d.tally.map(([n, v]) => `${esc(n)} ${v}`).join(" · ")}</p>`;
+    const ef = d.effects, efTxt = [["봉인", ef.sealed], ["수감", ef.jailed], ["투표 금지", ef.silenced], ["숨음", ef.hidden], ["포섭 방지", ef.blessed], ["조작", ef.framed], ["의사 보호", ef.doctor], ["경호", ef.guard]].filter(([, a]) => a && a.length).map(([l, a]) => `${l}: ${a.map(esc).join(", ")}`);
+    if (efTxt.length) inner += `<p class="small muted">${efTxt.join(" · ")}</p>`;
+    if (d.assassins.length) inner += `<p class="small"><b>암살 지정</b> ${d.assassins.map((a) => `${esc(a.actor)} → ${esc(a.target)}${a.blocked ? ' <span class="warn">(봉인·수감으로 무효)</span>' : ""}`).join(", ")}</p>`;
+    if (kills.length) inner += `<div><p class="small"><b>킬 사진</b> <span class="muted">(시간순, 먼저 찍은 2장만 진짜 킬)</span></p>${kills.map((k, i) => `<div style="border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:6px"><div class="between"><span class="small">${i + 1}. ${kst(k.at).slice(11, 19)} · <b>${esc(k.by)}</b> <span class="muted">(${esc(k.byJob || "")})</span> → <b>${esc(k.target)}</b>${k.assassin ? ' <span class="pill m">암살</span>' : ""}</span><span class="pill ${RES_CLS(k.result)}">${esc(k.result || (k.success ? "사망" : "대기"))}</span></div>${k.protections && k.protections.length ? `<p class="small muted">그날 대상 보호: ${k.protections.map(esc).join(", ")}</p>` : ""}<div class="row" style="margin-top:4px"><button class="btn ghost small" type="button" data-gimg="${esc(k.url || "")}">사진 보기</button><button class="btn ghost small" type="button" data-gsucc="${k.id}" data-v="${k.success ? 0 : 1}">${k.success ? "사진 탭에서 숨기기" : "사진 탭에 공개"}</button></div></div>`).join("")}</div>`;
+    if (ctr.length) inner += `<p class="small"><b>반격</b> ${ctr.map((c) => `${kst(c.at).slice(11, 19)} ${esc(c.by)} → ${esc(c.target)}`).join(", ")}</p>`;
+    if (d.actions.length) inner += `<div><p class="small"><b>행동</b></p>${d.actions.sort((a, b) => a.at - b.at).map((a) => `<p class="small">${kst(a.at).slice(11, 16)} · <b>${esc(a.actor)}</b> <span class="muted">(${esc(a.job || "")})</span> ${esc(a.label)}${a.targets.length ? " → " + a.targets.map(esc).join(", ") : ""}${a.note ? ` <span class="muted">"${esc(a.note)}"</span>` : ""}${a.blocked ? ' <span class="warn">무효(봉인·수감)</span>' : ""}</p>`).join("")}</div>`;
+    if (d.missions.length) inner += `<p class="small muted">미션: ${d.missions.map((x) => `${x.group}조(${esc(x.by)})${x.rejected ? " 반려" : ""}`).join(", ")}</p>`;
+    h += fold(key, `${d.day}일차`, `<span class="muted">${esc(d.date)} · ${d.weekday ? "평일" : "주말"} · 킬 사진 ${kills.length}</span>`, inner || `<p class="small muted">기록 없음</p>`, d.current);
+  }
+  // 알림
+  const evs = G.events.filter((e) => !GOD_Q || (e.text + " " + e.to).includes(GOD_Q));
+  h += fold("g_events", "모든 알림 (개인 알림 포함)", `<span class="muted">${G.events.length}개</span>`, `<input type="text" id="g_q" placeholder="이름이나 내용으로 찾기" value="${esc(GOD_Q)}"><div class="feed">${evs.slice(0, 300).map((e) => `<div class="ev"><div class="meta">${shortTime(e.at)} · ${esc(e.to)}${e.future ? " · 아직 안 보임" : ""}</div>${esc(e.text)}</div>`).join("")}</div>`, false);
+  h += fold("g_msg", "개인 메시지 보내기", "", `<div class="field"><label>받는 사람</label><select id="g_to">${P.map((p) => `<option value="${esc(p.sid)}">${esc(p.name)}</option>`).join("")}</select></div><textarea id="g_txt" placeholder="그 사람 앱 알림으로만 갑니다"></textarea><button class="btn full" type="button" id="g_send">보내기</button>`, false);
+  return h;
+}
+function godBox(html) { $("modalBox").innerHTML = html; $("modalBox").style.maxHeight = "85vh"; $("modalBox").style.overflow = "auto"; $("modal").hidden = false; const c = $("gm_close"); if (c) c.onclick = () => { $("modal").hidden = true; }; }
+async function godView(sid) {
+  try {
+    const v = await api("admin_view_as", { sid });
+    const me = v.me || {};
+    godBox(`<div class="between"><h3>${esc(me.name)} 님 화면</h3><button class="btn ghost small" type="button" id="gm_close">닫기</button></div>
+      <p class="small"><b>${esc(me.job || "")}</b> · ${esc(me.team || "")} · ${me.alive ? "생존" : "사망"} · 투표권 ${me.voteWeight ?? ""}</p>
+      ${(v.people || []).length ? `<p class="small"><b>아는 사람</b> ${v.people.map((p) => `${esc(p.name)}(${esc(p.label)})`).join(", ")}</p>` : ""}
+      <p class="small"><b>오늘 제출</b> ${Object.entries(v.today || {}).map(([k, pl]) => `${esc(({ vote: "투표", dispute: "이의 제기", choice: "신도 선택" })[k] || ((v.abilities || []).find((a) => a.kind === k) || {}).label || k)}${pl && pl.target ? "→" + esc((GOD.players.find((x) => x.sid === pl.target) || {}).name || "") : ""}`).join(", ") || "없음"}</p>
+      ${(v.myPhotos || []).length ? `<p class="small"><b>오늘 사진</b> ${v.myPhotos.map((p) => `${shortTime(p.at)} ${p.kind}${p.target ? "→" + esc((GOD.players.find((x) => x.sid === p.target) || {}).name || "") : ""}`).join(", ")}</p>` : ""}
+      <p class="small"><b>남은 능력</b> ${(v.abilities || []).map((a) => `${esc(a.label)}${a.left != null ? `(${a.left})` : ""}`).join(", ") || "없음"}</p>
+      <div class="feed">${(v.events || []).map((e) => `<div class="ev"><div class="meta">${shortTime(e.at)}${e.mine ? " · 개인" : ""}</div>${esc(e.text)}</div>`).join("")}</div>`);
+  } catch (e) { toast(e.message); }
+}
+function godEdit(sid) {
+  const p = GOD.players.find((x) => x.sid === sid);
+  const sel = (id, opts, cur) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${esc(v)}"${String(v) === String(cur) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  godBox(`<div class="between"><h3>${esc(p.name)} 수정</h3><button class="btn ghost small" type="button" id="gm_close">닫기</button></div>
+    <div class="field"><label>현재 직업 (원래: ${esc(p.origJob)})</label>${sel("ge_job", JOB_LIST().map((j) => [j, j]), p.job)}</div>
+    <div class="field"><label>소속</label>${sel("ge_team", [["town", "시민"], ["mafia", "마피아"], ["cult", "교단"]], p.team)}</div>
+    <div class="field"><label>생사</label>${sel("ge_alive", [["1", "생존"], ["0", "사망"]], p.alive ? "1" : "0")}</div>
+    <div class="field"><label>사망 원인 (사망으로 바꿀 때)</label>${sel("ge_cause", Object.entries(CAUSE), "admin")}</div>
+    <div class="field"><label>마피아 접선</label>${sel("ge_conn", [["1", "접선됨"], ["0", "안 됨"]], p.connected ? "1" : "0")}</div>
+    <div class="field"><label>신도</label>${sel("ge_disc", [["", "아님"], ["일반", "일반 신도"], ["자유", "자유신도"]], p.disciple || "")}</div>
+    <div class="field"><label>방탄 / 시장 공개</label><div class="row">${sel("ge_armor", [["1", "방탄 있음"], ["0", "없음"]], p.armor ? "1" : "0")}${sel("ge_mayor", [["1", "시장 공개"], ["0", "비공개"]], p.mayor ? "1" : "0")}</div></div>
+    <div class="field"><label>능력 사용 횟수 초기화</label>${sel("ge_uses", [["", "그대로"], ["all", "전부 초기화"], ...Object.keys(p.uses || {}).map((k) => [k, k + " 초기화"])], "")}</div>
+    <div class="field"><label>전체 공지 (비우면 조용히 수정)</label><input type="text" id="ge_ann" placeholder="예: 판정 오류로 ○○ 님을 되살립니다."></div>
+    <button class="btn full" type="button" id="ge_ok">저장</button>`);
+  $("ge_ok").onclick = () => once($("ge_ok"), async () => {
+    const set = { job: $("ge_job").value, team: $("ge_team").value, connected: $("ge_conn").value === "1", disciple: $("ge_disc").value || null, armor: $("ge_armor").value === "1", mayor: $("ge_mayor").value === "1" };
+    const alive = $("ge_alive").value === "1";
+    if (alive !== p.alive) { set.alive = alive; if (!alive) set.deathCause = $("ge_cause").value; }
+    if ($("ge_uses").value) set.resetUses = $("ge_uses").value;
+    const announce = $("ge_ann").value;
+    if (!(await confirmBox(`${p.name} 님의 상태를 바꿀까요?${announce ? " 전체 공지도 나갑니다." : " (조용히 수정)"}`, "저장"))) return godEdit(sid);
+    try { await api("admin_god_edit", { sid, set, announce }); toast("저장했습니다."); $("modal").hidden = true; loadGod(); } catch (e) { toast(e.message); }
+  });
+}
+function bindGod() {
+  document.querySelectorAll("details[data-fold]").forEach((d) => d.addEventListener("toggle", (e) => { if (e.target !== d) return; ADMIN_OPEN[d.dataset.fold] = d.open; const ar = d.querySelector(":scope > summary [aria-hidden]"); if (ar) ar.textContent = d.open ? "▲" : "▼"; }));
+  const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
+  on("g_reload", () => loadGod());
+  const q = $("g_q"); if (q) q.onchange = () => { GOD_Q = q.value.trim(); ADMIN_OPEN.g_events = true; $("main").innerHTML = godHTML(); bindGod(); };
+  on("g_send", () => once($("g_send"), async () => { const t = $("g_txt").value.trim(); if (!t) return toast("내용을 적으세요."); try { await api("admin_god_message", { sids: [$("g_to").value], text: t }); toast("보냈습니다."); $("g_txt").value = ""; } catch (e) { toast(e.message); } }));
+  document.querySelectorAll("[data-gview]").forEach((b) => (b.onclick = () => godView(b.dataset.gview)));
+  document.querySelectorAll("[data-gedit]").forEach((b) => (b.onclick = () => godEdit(b.dataset.gedit)));
+  document.querySelectorAll("[data-gimg]").forEach((b) => (b.onclick = () => { if (!b.dataset.gimg) return toast("사진 주소가 없습니다."); godBox(`<div class="between"><h3>킬 사진</h3><button class="btn ghost small" type="button" id="gm_close">닫기</button></div><img class="ph" alt="킬 사진" src="${esc(b.dataset.gimg)}">`); }));
+  document.querySelectorAll("[data-gsucc]").forEach((b) => (b.onclick = async () => { try { await api("admin_god_photo", { id: Number(b.dataset.gsucc), success: b.dataset.v === "1" }); toast("바꿨습니다."); loadGod(); } catch (e) { toast(e.message); } }));
 }
 
 // ------------------------------------------------------------------ 이벤트 연결
