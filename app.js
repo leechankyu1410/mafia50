@@ -123,7 +123,7 @@ async function refresh(first, email) {
 // ------------------------------------------------------------------ 화면 틀
 function render() {
   const info = V.info || {};
-  const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "행동은 07:30부터" : info.weekday ? "평일" : "주말 휴전"}`;
+  const head = V.status === "none" ? "" : info.phase === "before" ? "시작 전" : info.phase === "ended" || V.status === "ended" ? "게임 종료" : `${info.day}일차 · ${info.phase === "night" ? "행동은 07:30부터" : info.weekday ? "플레이일" : "휴전일 (투표·대화만)"}`;
   $("hday").textContent = head;
   const canHide = V.me && V.me.job;
   $("hname").innerHTML = `${canHide ? `<button type="button" id="hideBtn" class="btn ghost small" style="padding:4px 10px">${REVEAL ? "🔒 가리기" : "👁 보기"}</button> ` : ""}${esc(V.me ? V.me.name || "" : V.email || "")} · <a href="#" id="lo" class="muted">로그아웃</a>`;
@@ -446,7 +446,7 @@ async function loadHistory() {
     h += `<div class="card"><div class="between"><h3>직업 공개</h3><span class="small muted">최종 소속 · 시민 ${counts.town} · 마피아 ${counts.mafia} · 교단 ${counts.cult}</span></div><div class="tw"><table><tr><th>이름</th><th>직업</th><th>소속</th><th>결과</th></tr>${H.players.map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.origJob)}${p.job !== p.origJob ? `<br><span class="muted">→ ${esc(p.job)}</span>` : ""}${p.group ? `<br><span class="muted">${p.group}조</span>` : ""}${p.lover ? `<br><span class="muted">연인 ${esc(p.lover)}</span>` : ""}${p.witnessOf ? `<br><span class="muted">아는 마피아 ${esc(p.witnessOf)}</span>` : ""}</td><td><span class="pill ${tc(p.team)}">${TEAM_KO[p.team]}</span>${p.disciple ? `<br><span class="muted">${p.disciple} 신도</span>` : ""}${p.team === "mafia" ? `<br><span class="muted">${p.connected ? "접선됨" : "접선 못 함"}</span>` : ""}</td><td>${p.alive ? "생존" : `${p.deathDay}일차 ${CAUSE[p.deathCause] || ""}`}</td></tr>`).join("")}</table></div></div>`;
     for (const d of H.days) {
       const voteRows = Object.entries(d.votes).sort((a, b) => b[1].length - a[1].length);
-      h += `<details class="card"><summary><b>${d.day}일차</b> <span class="small muted">${d.date} · ${d.weekday ? "평일" : "주말"} · 사망 ${d.died.length}명</span></summary><div class="stack" style="display:flex;flex-direction:column;gap:10px;margin-top:8px">`;
+      h += `<details class="card"><summary><b>${d.day}일차</b> <span class="small muted">${d.date} · ${d.weekday ? "플레이일" : "휴전일"} · 사망 ${d.died.length}명</span></summary><div class="stack" style="display:flex;flex-direction:column;gap:10px;margin-top:8px">`;
       if (d.died.length) h += `<p class="small"><b>사망</b> ${d.died.map((x) => `${esc(x.name)}${x.cause ? ` (${CAUSE[x.cause] || x.cause})` : ""}`).join(", ")}</p>`;
       if (d.sealed.length || d.jailed.length) h += `<p class="small muted">${d.sealed.length ? `봉인: ${d.sealed.map(esc).join(", ")}` : ""}${d.sealed.length && d.jailed.length ? " · " : ""}${d.jailed.length ? `수감: ${d.jailed.map(esc).join(", ")}` : ""}</p>`;
       if (d.kills.length) h += `<div><p class="small"><b>킬 사진</b></p>${d.kills.map((k) => `<div class="person"><span class="small">${tm(k.at)} · <b>${esc(k.by)}</b> → ${esc(k.target)}</span><span class="pill ${k.success ? "m" : "n"}">${k.success ? "사망" : "실패·막힘"}</span></div>${k.url ? `<img class="ph" loading="lazy" alt="${esc(k.target)} 킬 사진" src="${esc(k.url)}">` : ""}`).join("")}</div>`;
@@ -494,6 +494,18 @@ function adminHTML() {
     `<p class="small">${info.day}일차 · ${info.phase === "night" ? "발표 후 대기 (07:30부터 행동)" : info.phase === "open" ? "진행" : info.phase} · 자정 처리 완료 ${G.resolvedThrough}일차 · 앱 시각 ${kst(ADMIN.now)}</p>
     <p class="small muted">생존 ${P.filter((p) => p.alive).length} / ${P.length}${G.winner ? " · 승자 " + G.winner : ""}</p>
     <div class="row"><button class="btn ghost" type="button" id="a_pause">${G.status === "paused" ? "재개" : "일시 정지"}</button><button class="btn ghost" type="button" id="a_reload">새로고침</button></div>`, true);
+  // 플레이일 / 휴전일
+  const sch = ADMIN.schedule || [];
+  const DOW = "일월화수목금토";
+  h += fold("schedule", "플레이일 설정 (휴전일)", `<span class="muted">${sch.filter((x) => x.override).length ? "직접 바꾼 날 " + sch.filter((x) => x.override).length + "개" : "기본: 월~금"}</span>`,
+    `<p class="small muted">기본은 월~금이 플레이일, 토·일이 휴전일입니다. 공휴일처럼 쉬는 날은 <b>휴전으로</b>를 누르세요. 휴전일은 주말처럼 투표·대화·미션만 하고 킬·능력·포섭은 쉽니다. 바꾸면 전체에 공지가 나갑니다. 이미 시작된 날은 바꿀 수 없고, 오늘은 07:30 전까지만 바꿀 수 있습니다.</p>
+    <div class="tw"><table><tr><th>날짜</th><th>상태</th><th></th></tr>${sch.map((x) => {
+      const [, mm, dd] = x.date.split("-").map(Number);
+      const dow = DOW[new Date(x.date + "T00:00:00Z").getUTCDay()];
+      const locked = x.day < info.day || (x.day === info.day && info.phase === "open");
+      const btns = locked ? `<span class="small muted">변경 불가</span>` : [x.play ? ["off", "휴전으로"] : ["on", "플레이로"], ...(x.override ? [["default", "기본으로"]] : [])].map(([m, l]) => `<button class="btn ghost small" type="button" data-day="${x.date}" data-mode="${m}">${l}</button>`).join(" ");
+      return `<tr><td>${x.day}일차 · ${mm}/${dd}(${dow})</td><td><span class="pill ${x.play ? "t" : "n"}">${x.play ? "플레이" : "휴전"}</span>${x.override ? ' <span class="small warn">직접 설정</span>' : ""}</td><td>${btns}</td></tr>`;
+    }).join("")}</table></div>`, false);
   // 미션: 날짜별로 한 번 더 접기
   const days = [...new Set(ms.map((m) => m.day))].sort((a, b) => b - a);
   const dayHTML = days.map((d) => {
@@ -538,6 +550,11 @@ function bindAdmin() {
   on("a_reload", () => loadAdmin());
   on("a_retire", async () => { if (await confirmBox("전업 관리자로 전환할까요? 되돌릴 수 없고, 다시는 게임에 참여할 수 없습니다. 전체에 공지됩니다.", "전환")) run("admin_retire", {}, "전업 관리자가 되었습니다. 🔮 전지 탭을 여세요."); });
   on("a_pause", () => run("admin_set", { status: ADMIN.game.status === "paused" ? "running" : "paused" }));
+  document.querySelectorAll("[data-day][data-mode]").forEach((b) => (b.onclick = async () => {
+    const m = b.dataset.mode, label = m === "off" ? "휴전일로" : m === "on" ? "플레이일로" : "기본 설정으로";
+    if (!(await confirmBox(`${b.dataset.day}을 ${label} 바꿀까요? 전체에 공지가 나갑니다.`, "바꾸기"))) return;
+    try { await api("admin_day", { date: b.dataset.day, mode: m }); toast("바꿨습니다."); ADMIN_OPEN.schedule = true; loadAdmin(); } catch (e) { toast(e.message); }
+  }));
   on("a_save", () => run("admin_set", { clockOffsetMin: Number($("a_off").value) || 0 }, "저장했습니다."));
   document.querySelectorAll("[data-off]").forEach((b) => (b.onclick = () => { const o = $("a_off"); o.value = b.dataset.off === "reset" ? 0 : (Number(o.value) || 0) + Number(b.dataset.off); }));
   on("a_annb", () => run("admin_announce", { text: $("a_ann").value }, "공지를 보냈습니다."));
@@ -591,7 +608,7 @@ function godHTML() {
     if (ctr.length) inner += `<p class="small"><b>반격</b> ${ctr.map((c) => `${kst(c.at).slice(11, 19)} ${esc(c.by)} → ${esc(c.target)}`).join(", ")}</p>`;
     if (d.actions.length) inner += `<div><p class="small"><b>행동</b></p>${d.actions.sort((a, b) => a.at - b.at).map((a) => `<p class="small">${kst(a.at).slice(11, 16)} · <b>${esc(a.actor)}</b> <span class="muted">(${esc(a.job || "")})</span> ${esc(a.label)}${a.targets.length ? " → " + a.targets.map(esc).join(", ") : ""}${a.note ? ` <span class="muted">"${esc(a.note)}"</span>` : ""}${a.blocked ? ' <span class="warn">무효(봉인·수감)</span>' : ""}</p>`).join("")}</div>`;
     if (d.missions.length) inner += `<p class="small muted">미션: ${d.missions.map((x) => `${x.group}조(${esc(x.by)})${x.rejected ? " 반려" : ""}`).join(", ")}</p>`;
-    h += fold(key, `${d.day}일차`, `<span class="muted">${esc(d.date)} · ${d.weekday ? "평일" : "주말"} · 킬 사진 ${kills.length}</span>`, inner || `<p class="small muted">기록 없음</p>`, d.current);
+    h += fold(key, `${d.day}일차`, `<span class="muted">${esc(d.date)} · ${d.weekday ? "플레이일" : "휴전일"} · 킬 사진 ${kills.length}</span>`, inner || `<p class="small muted">기록 없음</p>`, d.current);
   }
   // 알림
   const evs = G.events.filter((e) => !GOD_Q || (e.text + " " + e.to).includes(GOD_Q));
